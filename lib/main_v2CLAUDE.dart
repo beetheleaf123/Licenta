@@ -759,112 +759,121 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
           )
         ],
       ),
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.symmetric(vertical: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 20),
-                  const SizedBox(width: 6),
-                  Text(
-                    _locationCity,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ],
-              ),
-              IconButton(
-                icon: const Icon(Icons.edit_location_alt_rounded, color: Colors.white70),
-                onPressed: _showCitySearchDialog,
-                tooltip: "Schimbă Orașul",
-              ),
-            ],
-          ),
-          const SizedBox(height: 15),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "$currentTemp",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 48,
-                          fontWeight: FontWeight.w900,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 20),
+                        const SizedBox(width: 6),
+                        Text(
+                          _locationCity,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
                         ),
-                      ),
-                      const Text(
-                        "°C",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    wmoDesc,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      ],
                     ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.12),
-                  shape: BoxShape.circle,
+                    IconButton(
+                      icon: const Icon(Icons.edit_location_alt_rounded, color: Colors.white70),
+                      onPressed: _showCitySearchDialog,
+                      tooltip: "Schimbă Orașul",
+                    ),
+                  ],
                 ),
-                child: Icon(wmoIcon, color: wmoColor, size: 48),
-              ),
-            ],
-          ),
-          
-          const Divider(height: 30, color: Colors.white24),
+                const SizedBox(height: 15),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildWeatherInfoItem(Icons.light_mode_rounded, "Răsărit", sunriseTime, Colors.orangeAccent),
-              _buildWeatherInfoItem(Icons.nights_stay_rounded, "Apus", sunsetTime, Colors.deepPurpleAccent),
-              _buildWeatherInfoItem(Icons.water_drop_rounded, "Precipit.", "$rainChance%", Colors.lightBlueAccent),
-            ],
-          ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "$currentTemp",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 48,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const Text(
+                              "°C",
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          wmoDesc,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(wmoIcon, color: wmoColor, size: 48),
+                    ),
+                  ],
+                ),
+                
+                const Divider(height: 30, color: Colors.white24),
 
-          const SizedBox(height: 20),
-          const Text(
-            "PROGNOZĂ 5 ZILE",
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildWeatherInfoItem(Icons.light_mode_rounded, "Răsărit", sunriseTime, Colors.orangeAccent),
+                    _buildWeatherInfoItem(Icons.nights_stay_rounded, "Apus", sunsetTime, Colors.deepPurpleAccent),
+                    _buildWeatherInfoItem(Icons.water_drop_rounded, "Precipit.", "$rainChance%", Colors.lightBlueAccent),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+                const Text(
+                  "PROGNOZĂ 5 ZILE",
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
 
           SizedBox(
             height: 115,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 22),
               itemCount: _forecastDays.length > 5 ? 5 : _forecastDays.length,
               itemBuilder: (context, index) {
                 final day = _forecastDays[index];
@@ -878,9 +887,9 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                 final rChance = (day['rain_chance'] as num?)?.toInt() ?? 0;
 
                 return Container(
-                  width: 78,
-                  margin: const EdgeInsets.only(right: 10),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                  width: 82,
+                  margin: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(16),
@@ -892,6 +901,8 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                       Text(
                         dayName,
                         style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       Icon(dIcon, color: dColor, size: 22),
                       Row(
