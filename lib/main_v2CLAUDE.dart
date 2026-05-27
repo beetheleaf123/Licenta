@@ -260,70 +260,6 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                 fullWidth: true,
               ),
 
-              const SizedBox(height: 25),
-
-              const SectionTitle("WEMOS SENSORS"),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))]
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                              child: const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 24),
-                            ),
-                            const SizedBox(width: 15),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Luminosity", style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w600)),
-                                Text("BH1750 Sensor", style: TextStyle(fontSize: 10, color: Colors.blueGrey)),
-                              ],
-                            ),
-                          ],
-                        ),
-                        Text("$luxValue lx", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D3142))),
-                      ],
-                    ),
-                    const Divider(height: 30),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("Auto-Light Threshold", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                            Text("${lightThreshold.toInt()} lx", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        Slider(
-                          value: lightThreshold,
-                          min: 0,
-                          max: 500,
-                          divisions: 50,
-                          label: "${lightThreshold.toInt()} lx",
-                          onChanged: (val) {
-                            setState(() => lightThreshold = val);
-                          },
-                          onChangeEnd: (val) {
-                            _mqttService.publish("smarthome/settings/update", val.toInt().toString());
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: 30),
               const SectionTitle("LIGHTING CONTROL"),
               _buildBulbCard(),
@@ -362,49 +298,41 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                       "Automatizări", 
                       Icons.settings_suggest_rounded, 
                       Colors.indigo, 
-                      () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AutomationsPage()))
+                      () => Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (context) => AutomationsPage(
+                            lightThreshold: lightThreshold,
+                            mqttService: _mqttService,
+                            onThresholdChanged: (val) => setState(() => lightThreshold = val),
+                          )
+                        )
+                      )
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 15),
-              // BUTOANE IR + MISCARE
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildNavigationButton(
-                      "Receptor IR", 
-                      Icons.settings_remote_rounded, 
-                      const Color(0xFFE91E63), 
-                      () => Navigator.push(
-                        context, 
-                        MaterialPageRoute(
-                          builder: (context) => ReceptorIRPage(
-                            irCodes: _irCodes,
-                            mqttService: _mqttService,
-                          )
+              // BUTON DEBUGGING (conține IR + Mișcare) - Centrat pe ecran
+              Center(
+                child: SizedBox(
+                  width: (MediaQuery.of(context).size.width - 55) / 2,
+                  child: _buildNavigationButton(
+                    "Debugging", 
+                    Icons.bug_report_rounded, 
+                    const Color(0xFF607D8B), 
+                    () => Navigator.push(
+                      context, 
+                      MaterialPageRoute(
+                        builder: (context) => DebuggingPage(
+                          irCodes: _irCodes,
+                          motionEvents: _motionEvents,
+                          mqttService: _mqttService,
                         )
                       )
-                    ),
+                    )
                   ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: _buildNavigationButton(
-                      "Mișcare", 
-                      Icons.radar_rounded, 
-                      const Color(0xFF00BCD4), 
-                      () => Navigator.push(
-                        context, 
-                        MaterialPageRoute(
-                          builder: (context) => MotionSensorPage(
-                            motionEvents: _motionEvents,
-                            mqttService: _mqttService,
-                          )
-                        )
-                      )
-                    ),
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: 50),
             ],
@@ -646,54 +574,30 @@ class _ReceptorIRPageState extends State<ReceptorIRPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
-      appBar: AppBar(
-        title: const Text("RECEPTOR IR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.2)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          // Buton pentru golirea listei
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
-            tooltip: "Șterge tot",
-            onPressed: () {
-              setState(() {
-                _localCodes.clear();
-                widget.irCodes.clear();
-              });
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // --- HEADER CU STATUS ---
-          Container(
-            margin: const EdgeInsets.all(20),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFE91E63), Color(0xFFAD1457)],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFE91E63).withOpacity(0.3), 
-                  blurRadius: 15, 
-                  offset: const Offset(0, 8),
-                ),
-              ],
+    return Column(
+      children: [
+        // --- HEADER CU STATUS ---
+        Container(
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE91E63), Color(0xFFAD1457)],
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFE91E63).withOpacity(0.3), 
+                blurRadius: 15, 
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
@@ -706,133 +610,162 @@ class _ReceptorIRPageState extends State<ReceptorIRPage> {
                       style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        "${_localCodes.length} coduri primite",
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            "${_localCodes.length} coduri primite",
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Buton stergere
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _localCodes.clear();
+                              widget.irCodes.clear();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 14),
+                                SizedBox(width: 4),
+                                Text("Șterge", style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.settings_remote_rounded, color: Colors.white, size: 32),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
+                child: const Icon(Icons.settings_remote_rounded, color: Colors.white, size: 32),
+              ),
+            ],
           ),
+        ),
 
-          // --- LISTA CODURI IR IN TIMP REAL ---
-          Expanded(
-            child: _localCodes.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.sensors_off_rounded, size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Niciun cod IR primit încă",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[400]),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Apasă un buton pe telecomandă...",
-                        style: TextStyle(fontSize: 13, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _localCodes.length,
-                  itemBuilder: (context, index) {
-                    final entry = _localCodes[index];
-                    final isFirst = index == 0;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: isFirst 
-                          ? Border.all(color: const Color(0xFFE91E63).withOpacity(0.4), width: 1.5) 
-                          : null,
-                        boxShadow: [
-                          BoxShadow(
-                            color: isFirst 
-                              ? const Color(0xFFE91E63).withOpacity(0.08) 
-                              : Colors.black.withOpacity(0.02), 
-                            blurRadius: 10, 
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: isFirst 
-                              ? const Color(0xFFE91E63).withOpacity(0.1) 
-                              : Colors.grey.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.nfc_rounded, 
-                            color: isFirst ? const Color(0xFFE91E63) : Colors.grey, 
-                            size: 22,
-                          ),
-                        ),
-                        title: Text(
-                          entry.code,
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isFirst ? const Color(0xFFE91E63) : const Color(0xFF2D3142),
-                          ),
-                        ),
-                        subtitle: Text(
-                          _formatTime(entry.timestamp),
-                          style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                        ),
-                        trailing: isFirst 
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE91E63).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                "NOU",
-                                style: TextStyle(
-                                  color: Color(0xFFE91E63), 
-                                  fontSize: 10, 
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            )
-                          : Text(
-                              "#${_localCodes.length - index}",
-                              style: TextStyle(fontSize: 11, color: Colors.grey[300], fontWeight: FontWeight.bold),
-                            ),
-                      ),
-                    );
-                  },
+        // --- LISTA CODURI IR IN TIMP REAL ---
+        Expanded(
+          child: _localCodes.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.sensors_off_rounded, size: 64, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Niciun cod IR primit încă",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[400]),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Apasă un buton pe telecomandă...",
+                      style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                    ),
+                  ],
                 ),
-          ),
-        ],
-      ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _localCodes.length,
+                itemBuilder: (context, index) {
+                  final entry = _localCodes[index];
+                  final isFirst = index == 0;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: isFirst 
+                        ? Border.all(color: const Color(0xFFE91E63).withOpacity(0.4), width: 1.5) 
+                        : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: isFirst 
+                            ? const Color(0xFFE91E63).withOpacity(0.08) 
+                            : Colors.black.withOpacity(0.02), 
+                          blurRadius: 10, 
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isFirst 
+                            ? const Color(0xFFE91E63).withOpacity(0.1) 
+                            : Colors.grey.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.nfc_rounded, 
+                          color: isFirst ? const Color(0xFFE91E63) : Colors.grey, 
+                          size: 22,
+                        ),
+                      ),
+                      title: Text(
+                        entry.code,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isFirst ? const Color(0xFFE91E63) : const Color(0xFF2D3142),
+                        ),
+                      ),
+                      subtitle: Text(
+                        _formatTime(entry.timestamp),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                      ),
+                      trailing: isFirst 
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE91E63).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              "NOU",
+                              style: TextStyle(
+                                color: Color(0xFFE91E63), 
+                                fontSize: 10, 
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            "#${_localCodes.length - index}",
+                            style: TextStyle(fontSize: 11, color: Colors.grey[300], fontWeight: FontWeight.bold),
+                          ),
+                    ),
+                  );
+                },
+              ),
+        ),
+      ],
     );
   }
 }
@@ -1106,8 +1039,18 @@ class SensorsPage extends StatelessWidget {
 
 // --- PAGINA AUTOMATIZARI (CERINTA UTILIZATOR) ---
 // Permite selectarea unui obiect si a unui senzor pentru a crea o logica de control.
+// Acum include si slider-ul de Auto-Light Threshold (mutat din dashboard).
 class AutomationsPage extends StatefulWidget {
-  const AutomationsPage({super.key});
+  final double lightThreshold;
+  final MqttServiceV2 mqttService;
+  final ValueChanged<double> onThresholdChanged;
+
+  const AutomationsPage({
+    super.key,
+    required this.lightThreshold,
+    required this.mqttService,
+    required this.onThresholdChanged,
+  });
 
   @override
   State<AutomationsPage> createState() => _AutomationsPageState();
@@ -1117,9 +1060,16 @@ class _AutomationsPageState extends State<AutomationsPage> {
   String? selectedDevice;
   String? selectedSensor;
   double threshold = 100.0;
+  late double _luxThreshold;
 
   final List<String> devices = ["Priză S60", "Bec Philips WiZ", "Switch Sonoff"];
   final List<String> sensors = ["Senzor Lumini (Lux)"];
+
+  @override
+  void initState() {
+    super.initState();
+    _luxThreshold = widget.lightThreshold;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1134,6 +1084,64 @@ class _AutomationsPageState extends State<AutomationsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // --- SECTIUNEA AUTO-LIGHT THRESHOLD (MUTATA DIN DASHBOARD) ---
+            const Text(
+              "Automatizare Lumini",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1A237E)),
+            ),
+            const SizedBox(height: 8),
+            const Text("Becul se aprinde automat când luminozitatea scade sub pragul setat."),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(24),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                            child: const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 24),
+                          ),
+                          const SizedBox(width: 15),
+                          const Text("Auto-Light Threshold", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      Text("${_luxThreshold.toInt()} lx", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Slider(
+                    value: _luxThreshold,
+                    min: 0,
+                    max: 500,
+                    divisions: 50,
+                    label: "${_luxThreshold.toInt()} lx",
+                    activeColor: Colors.indigo,
+                    onChanged: (val) {
+                      setState(() => _luxThreshold = val);
+                      widget.onThresholdChanged(val);
+                    },
+                    onChangeEnd: (val) {
+                      widget.mqttService.publish("smarthome/settings/update", val.toInt().toString());
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 40),
+            const Divider(),
+            const SizedBox(height: 20),
+
+            // --- SECTIUNEA CONFIGURARE REGULA NOUA ---
             const Text(
               "Configurează o regulă nouă", 
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1A237E))
@@ -1219,6 +1227,57 @@ class _AutomationsPageState extends State<AutomationsPage> {
   }
 }
 
+// --- PAGINA DEBUGGING (NOU - conține Receptor IR + Senzor Mișcare) ---
+class DebuggingPage extends StatelessWidget {
+  final List<IrCodeEntry> irCodes;
+  final List<MotionEvent> motionEvents;
+  final MqttServiceV2 mqttService;
+
+  const DebuggingPage({
+    super.key,
+    required this.irCodes,
+    required this.motionEvents,
+    required this.mqttService,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F7FB),
+        appBar: AppBar(
+          title: const Text("DEBUGGING", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.2)),
+          centerTitle: true,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+            onPressed: () => Navigator.pop(context),
+          ),
+          bottom: TabBar(
+            labelColor: const Color(0xFF607D8B),
+            unselectedLabelColor: Colors.grey[400],
+            indicatorColor: const Color(0xFF607D8B),
+            indicatorWeight: 3,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            tabs: const [
+              Tab(icon: Icon(Icons.settings_remote_rounded), text: "Senzor IR"),
+              Tab(icon: Icon(Icons.radar_rounded), text: "Mișcare"),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            ReceptorIRPage(irCodes: irCodes, mqttService: mqttService),
+            MotionSensorPage(motionEvents: motionEvents, mqttService: mqttService),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // --- PAGINA SENZOR MISCARE (NOU) ---
 class MotionSensorPage extends StatefulWidget {
   final List<MotionEvent> motionEvents;
@@ -1296,74 +1355,63 @@ class _MotionSensorPageState extends State<MotionSensorPage> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FB),
-      appBar: AppBar(
-        title: const Text("SENZOR MIȘCARE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.2)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent),
-            tooltip: "Șterge tot",
-            onPressed: () {
-              setState(() {
-                _localEvents.clear();
-                widget.motionEvents.clear();
-              });
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // --- HEADER CU INDICATOR LIVE ---
-          Container(
-            margin: const EdgeInsets.all(20),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: _justDetected 
-                  ? [const Color(0xFFFF5722), const Color(0xFFD84315)]
-                  : [const Color(0xFF00BCD4), const Color(0xFF00838F)],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: (_justDetected ? const Color(0xFFFF5722) : const Color(0xFF00BCD4)).withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+    return Column(
+      children: [
+        // --- HEADER CU INDICATOR LIVE ---
+        Container(
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: _justDetected 
+                ? [const Color(0xFFFF5722), const Color(0xFFD84315)]
+                : [const Color(0xFF00BCD4), const Color(0xFF00838F)],
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _justDetected ? "⚡ MIȘCARE DETECTATĂ!" : "Radar Microunde",
-                        style: TextStyle(
-                          color: Colors.white, 
-                          fontSize: _justDetected ? 16 : 12, 
-                          fontWeight: FontWeight.w800,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: (_justDetected ? const Color(0xFFFF5722) : const Color(0xFF00BCD4)).withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _justDetected ? "⚡ MIȘCARE DETECTATĂ!" : "Radar Microunde",
+                      style: TextStyle(
+                        color: Colors.white, 
+                        fontSize: _justDetected ? 16 : 12, 
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      "smarthome/wemos/miscare",
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            "${_localEvents.length} detectări",
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        "smarthome/wemos/miscare",
-                        style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
+                        if (_localEvents.isNotEmpty) ...[
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
@@ -1371,160 +1419,171 @@ class _MotionSensorPageState extends State<MotionSensorPage> with SingleTickerPr
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              "${_localEvents.length} detectări",
+                              "Ultima: ${_timeAgo(_localEvents.first.timestamp)}",
                               style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
                             ),
                           ),
-                          if (_localEvents.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                "Ultima: ${_timeAgo(_localEvents.first.timestamp)}",
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
                         ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Indicator animat
-                AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.15),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(
-                            _justDetected ? (0.3 + 0.7 * (1 - _pulseController.value)) : 0.2
+                        const SizedBox(width: 8),
+                        // Buton stergere
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _localEvents.clear();
+                              widget.motionEvents.clear();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 14),
+                                SizedBox(width: 4),
+                                Text("Șterge", style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
                           ),
-                          width: _justDetected ? 3 : 1.5,
                         ),
-                      ),
-                      child: Icon(
-                        _justDetected ? Icons.sensors_rounded : Icons.radar_rounded,
-                        color: Colors.white,
-                        size: 30,
-                      ),
-                    );
-                  },
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              // Indicator animat
+              AnimatedBuilder(
+                animation: _pulseController,
+                builder: (context, child) {
+                  return Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.15),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(
+                          _justDetected ? (0.3 + 0.7 * (1 - _pulseController.value)) : 0.2
+                        ),
+                        width: _justDetected ? 3 : 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      _justDetected ? Icons.sensors_rounded : Icons.radar_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
+        ),
 
-          // --- LISTA EVENIMENTE ---
-          Expanded(
-            child: _localEvents.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.radar_rounded, size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Nicio mișcare detectată",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[400]),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Radarul monitorizează zona...",
-                        style: TextStyle(fontSize: 13, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _localEvents.length,
-                  itemBuilder: (context, index) {
-                    final event = _localEvents[index];
-                    final isFirst = index == 0;
-                    final isRecent = DateTime.now().difference(event.timestamp).inSeconds < 5;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: (isFirst && isRecent)
-                          ? Border.all(color: const Color(0xFFFF5722).withOpacity(0.5), width: 1.5)
-                          : null,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (isFirst && isRecent)
-                              ? const Color(0xFFFF5722).withOpacity(0.08)
-                              : Colors.black.withOpacity(0.02),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: (isFirst && isRecent)
-                              ? const Color(0xFFFF5722).withOpacity(0.1)
-                              : const Color(0xFF00BCD4).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.directions_walk_rounded,
-                            color: (isFirst && isRecent) ? const Color(0xFFFF5722) : const Color(0xFF00BCD4),
-                            size: 22,
-                          ),
-                        ),
-                        title: Text(
-                          "Mișcare #${event.counter}",
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: (isFirst && isRecent) ? const Color(0xFFFF5722) : const Color(0xFF2D3142),
-                          ),
-                        ),
-                        subtitle: Text(
-                          _formatTime(event.timestamp),
-                          style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                        ),
-                        trailing: (isFirst && isRecent)
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFF5722).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                "LIVE",
-                                style: TextStyle(
-                                  color: Color(0xFFFF5722),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            )
-                          : Text(
-                              _timeAgo(event.timestamp),
-                              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                            ),
-                      ),
-                    );
-                  },
+        // --- LISTA EVENIMENTE ---
+        Expanded(
+          child: _localEvents.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.radar_rounded, size: 64, color: Colors.grey[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Nicio mișcare detectată",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[400]),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Radarul monitorizează zona...",
+                      style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                    ),
+                  ],
                 ),
-          ),
-        ],
-      ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _localEvents.length,
+                itemBuilder: (context, index) {
+                  final event = _localEvents[index];
+                  final isFirst = index == 0;
+                  final isRecent = DateTime.now().difference(event.timestamp).inSeconds < 5;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: (isFirst && isRecent)
+                        ? Border.all(color: const Color(0xFFFF5722).withOpacity(0.5), width: 1.5)
+                        : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isFirst && isRecent)
+                            ? const Color(0xFFFF5722).withOpacity(0.08)
+                            : Colors.black.withOpacity(0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: (isFirst && isRecent)
+                            ? const Color(0xFFFF5722).withOpacity(0.1)
+                            : const Color(0xFF00BCD4).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.directions_walk_rounded,
+                          color: (isFirst && isRecent) ? const Color(0xFFFF5722) : const Color(0xFF00BCD4),
+                          size: 22,
+                        ),
+                      ),
+                      title: Text(
+                        "Mișcare #${event.counter}",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: (isFirst && isRecent) ? const Color(0xFFFF5722) : const Color(0xFF2D3142),
+                        ),
+                      ),
+                      subtitle: Text(
+                        _formatTime(event.timestamp),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                      ),
+                      trailing: (isFirst && isRecent)
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF5722).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              "LIVE",
+                              style: TextStyle(
+                                color: Color(0xFFFF5722),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            _timeAgo(event.timestamp),
+                            style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                          ),
+                    ),
+                  );
+                },
+              ),
+        ),
+      ],
     );
   }
 }
