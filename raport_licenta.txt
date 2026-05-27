@@ -1,0 +1,60 @@
+RAPORT TEHNIC - MODIFICĂRI ȘI ÎMBUNĂTĂȚIRI ARHITECTURĂ SMART HOME
+Document suport pentru redactarea lucrării de licență
+Data: 27 Mai 2026
+
+Acest document descrie modificările de design, arhitectură software și protocoale de comunicație implementate în sistemul integrat Smart Home Hub. Acest raport poate fi integrat în capitolele „Implementare”, „Arhitectura sistemului” sau „Rezultate și testare” din lucrarea de licență.
+
+================================================================================
+1. RESTRUCTURAREA INTERFEȚEI UTILIZATOR (FLUTTER - FRONTEND)
+================================================================================
+S-a urmărit simplificarea dashboard-ului principal (DashboardScreenV2) conform standardelor moderne de UX (User Experience) și curățarea elementelor de control secundare:
+
+A. Mutarea controlului pragului de luminozitate (Luminosity Threshold):
+   - Descriere: Slider-ul pentru pragul de aprindere automată a luminii (BH1750 -> bec Philips WiZ) a fost eliminat de pe ecranul principal și integrat în pagina de Automatizări (AutomationsPage).
+   - Justificare academică: Această modificare respectă principiul de Separation of Concerns (Separarea Responsabilităților). Ecranul principal trebuie să reflecte stările curente și controlul imediat (Switch-uri), în timp ce setările logice de sistem aparțin ecranului dedicat de configurare a regulilor.
+
+B. Unificarea fluxurilor de monitorizare sub ecranul „Debugging”:
+   - Descriere: Butoanele separate pentru senzorul de mișcare radar și receptorul de coduri infraroșu (IR) au fost eliminate de pe dashboard. În locul lor s-a creat un buton unic „Debugging” care deschide un ecran de depanare (DebuggingPage).
+   - Tehnologie: S-a utilizat un controler de tab-uri (DefaultTabController, TabBar, TabBarView) pentru a prezenta cele două interfețe pe pagini glisante. Pagina ReceptorIRPage și pagina MotionSensorPage au fost refactorizate prin eliminarea widget-urilor de tip Scaffold și AppBar (care creau bare de navigare suprapuse inutile), fiind transformate în simple layout-uri flexibile bazate pe Columns.
+
+C. Rezolvarea crash-ului de layout la boot (Zero-Viewport Bug):
+   - Descriere: La pornirea aplicației pe emulator, rezoluția viewport-ului este raportată inițial ca fiind 0,0 px. Încercarea de a calcula lățimea butonului Debugging prin „MediaQuery.of(context).size.width” genera o lățime negativă (-27.5 px) pe widget-ul SizedBox, ducând la coruperea arborelui de Focus (_FocusInheritedScope) și închiderea aplicației.
+   - Soluție: S-a eliminat dependența de MediaQuery. Alinierea butonului s-a realizat printr-un layout flexibil nativ bazat pe rânduri și distanțiere (Row, Spacer și Expanded), folosind un raport de flex de 1:2:1 (ceea ce asigură exact 50% lățime și centrare perfectă, indiferent de rezoluție, eliminând riscul valorilor negative).
+
+================================================================================
+2. MOTORUL DE ANALIZĂ ȘI GRAFICELE DINAMICE (FL_CHART)
+================================================================================
+Modulul de analiză istorică a fost complet reproiectat pentru a fi scalabil și a arăta profesional (production-ready):
+
+A. Integrarea graficului secundar de Umiditate:
+   - Descriere: Ecranul de istoric (IstoricDetaliatScreenV2) a fost modificat pentru a afișa două profile grafice complet separate și personalizate: unul pentru Temperatură (indigo) și unul pentru Umiditate (albastru/cyan).
+   - Implementare: S-a extins logica din dashboard pentru a stoca o a doua serie de date (puncteUmiditate) culese în timp real prin MQTT și încărcate din API-ul Flask de pe RPi.
+
+B. Implementarea algoritmului de stabilizare vizuală a scării (minDelta):
+   - Descriere: În graficele clasice cu scalare automată, dacă temperatura sau umiditatea este constantă sau variază foarte puțin (ex: între 26.7°C și 26.8°C - o diferență de doar 0.1°C), graficul scalează axa Y pe acea diferență minusculă. Acest lucru face ca zgomotul normal de măsurare să apară ca o oscilație dramatică pe tot ecranul, derutând utilizatorul.
+   - Soluție: S-a introdus un algoritm de plajă minimă (minDelta = 4.0 pentru Temperatură, minDelta = 10.0 pentru Umiditate). Dacă variația maximă din setul de date este mai mică decât acest prag, axa Y se scalează simetric în jurul valorii medii la lățimea minDelta (ex: de la 24.7°C la 28.7°C pentru o valoare de 26.7°C). Fluctuațiile minuscule apar acum ca mici ondulații discrete în mijlocul ecranului, oferind un aspect realist și stabil. De asemenea, s-a păstrat un padding de 15% la extreme pentru a evita lipirea sau trunchierea liniei de marginile chenarului (clipping).
+
+================================================================================
+3. REZOLVAREA CONEXIUNII DE CONTROL DISPOZITIVE (PYTHON - BACKEND SERVER RPI)
+================================================================================
+A fost rezolvată o problemă critică legată de imposibilitatea de a comuta releul Sonoff THR320 din aplicație (deși datele de temperatură și umiditate erau primite corect):
+
+A. Cauza problemei:
+   - Dispozitivul Sonoff THR trimite datele de temperatură/umiditate în rețea ca pachete mDNS de multicast. Bridge-ul local „device_manager.py” de pe RPi prindea aceste pachete indiferent de IP-ul curent al dispozitivului.
+   - Pentru controlul stării releului (ON/OFF), aplicația Flutter trimite o comandă prin MQTT, iar „device_manager.py” inițiază un request HTTP POST direct la IP-ul Sonoff-ului. Acest IP era hardcodat în script („192.168.1.135”).
+   - Când router-ul a reatribuit un alt IP prin DHCP către Sonoff, request-urile HTTP POST au început să returneze erori de tipul „No route to host” (Errno 113) sau Timeouts.
+
+B. Soluție implementată (Dynamic IP Resolution):
+   - S-a modificat rutine de recepție mDNS din „device_manager.py” (clasa SmartHomeLANMonitor, metoda add_service) pentru a extrage IP-ul real direct din antetul pachetelor mDNS descoperite.
+   - Variabilele globale „THR_IP” și „S60_IP” (pentru priză) se actualizează acum automat în memorie la fiecare broadcast. Conexiunea HTTP POST se realizează întotdeauna pe IP-ul real curent al dispozitivului, eliminând complet blocajele cauzate de DHCP.
+
+================================================================================
+4. PROTOCOALE ȘI AUTENTIFICARE SECURITY (ESP8266 & MQTT)
+================================================================================
+S-a investigat și adaptat conexiunea microcontrolerului Wemos D1 cu broker-ul de mesaje securizat Mosquitto:
+
+A. Autentificarea în PubSubClient:
+   - S-a detectat că în codul ESP8266 conexiunea la broker era apelată prin „client.connect("Wemos_D1_Node")”, metodă specifică conexiunilor anonime.
+   - Deoarece broker-ul configurat pe RPi are activată securitatea prin utilizator și parolă, apelul a fost corectat la:
+     „client.connect("Wemos_D1_Node", "admin", "beetheleaf123")”.
+   - Această modificare previne respingerea conexiunii cu codul de stare MQTT „rc = -5” (Connection Refused: bad user name or password).

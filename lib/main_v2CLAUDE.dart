@@ -60,6 +60,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
   Timer? _statusTimer;
 
   List<FlSpot> puncteGrafic = [];
+  List<FlSpot> puncteUmiditate = [];
   bool seIncarcaGraficul = true;
 
   // --- NOU: LISTA CODURI IR ---
@@ -126,10 +127,11 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
         if (topic == 'tele/sonoff/SENSOR') {
           var data = jsonDecode(message);
           double tempVal = double.parse(data['BME280']['Temperature'].toString());
+          double humVal = double.parse(data['BME280']['Humidity'].toString());
           temperatura = tempVal.toStringAsFixed(1);
-          umiditate = data['BME280']['Humidity'].toString();
+          umiditate = humVal.toStringAsFixed(1);
           if (data['Switch'] != null) thrStatus = data['Switch'].toString().toUpperCase();
-          _updateLiveChart(tempVal);
+          _updateLiveChart(tempVal, humVal);
           lastBmeUpdate = DateTime.now(); // Update timestamp
           lastThrUpdate = DateTime.now(); // Update switch timestamp
         } 
@@ -179,11 +181,16 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     });
   }
 
-  void _updateLiveChart(double val) {
-    puncteGrafic.add(FlSpot(puncteGrafic.length.toDouble(), val));
+  void _updateLiveChart(double t, double h) {
+    puncteGrafic.add(FlSpot(puncteGrafic.length.toDouble(), t));
+    puncteUmiditate.add(FlSpot(puncteUmiditate.length.toDouble(), h));
     if (puncteGrafic.length > 50) {
       puncteGrafic.removeAt(0);
       puncteGrafic = puncteGrafic.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.y)).toList();
+    }
+    if (puncteUmiditate.length > 50) {
+      puncteUmiditate.removeAt(0);
+      puncteUmiditate = puncteUmiditate.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.y)).toList();
     }
   }
 
@@ -193,6 +200,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
       setState(() {
         puncteGrafic = data.asMap().entries.map((e) {
           double v = double.parse(e.value['temperatura'].toString());
+          return FlSpot(e.key.toDouble(), v);
+        }).toList();
+        puncteUmiditate = data.asMap().entries.map((e) {
+          double v = double.parse(e.value['umiditate'].toString());
           return FlSpot(e.key.toDouble(), v);
         }).toList();
         seIncarcaGraficul = false;
@@ -313,26 +324,30 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                 ],
               ),
               const SizedBox(height: 15),
-              // BUTON DEBUGGING (conține IR + Mișcare) - Centrat pe ecran
-              Center(
-                child: SizedBox(
-                  width: (MediaQuery.of(context).size.width - 55) / 2,
-                  child: _buildNavigationButton(
-                    "Debugging", 
-                    Icons.bug_report_rounded, 
-                    const Color(0xFF607D8B), 
-                    () => Navigator.push(
-                      context, 
-                      MaterialPageRoute(
-                        builder: (context) => DebuggingPage(
-                          irCodes: _irCodes,
-                          motionEvents: _motionEvents,
-                          mqttService: _mqttService,
+              // BUTON DEBUGGING (conține IR + Mișcare) - Centrat pe ecran (folosind flex layout sigur)
+              Row(
+                children: [
+                  const Spacer(),
+                  Expanded(
+                    flex: 2,
+                    child: _buildNavigationButton(
+                      "Debugging", 
+                      Icons.bug_report_rounded, 
+                      const Color(0xFF607D8B), 
+                      () => Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (context) => DebuggingPage(
+                            irCodes: _irCodes,
+                            motionEvents: _motionEvents,
+                            mqttService: _mqttService,
+                          )
                         )
                       )
-                    )
+                    ),
                   ),
-                ),
+                  const Spacer(),
+                ],
               ),
               const SizedBox(height: 50),
             ],
@@ -481,7 +496,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context, 
-        MaterialPageRoute(builder: (context) => IstoricDetaliatScreenV2(dataPoints: puncteGrafic))
+        MaterialPageRoute(builder: (context) => IstoricDetaliatScreenV2(
+          tempPoints: puncteGrafic,
+          humidityPoints: puncteUmiditate,
+        ))
       ),
       child: Container(
         height: 60,
@@ -826,8 +844,14 @@ class EnergyStatItem extends StatelessWidget {
 }
 
 class IstoricDetaliatScreenV2 extends StatelessWidget {
-  final List<FlSpot> dataPoints;
-  const IstoricDetaliatScreenV2({super.key, required this.dataPoints});
+  final List<FlSpot> tempPoints;
+  final List<FlSpot> humidityPoints;
+  
+  const IstoricDetaliatScreenV2({
+    super.key, 
+    required this.tempPoints,
+    required this.humidityPoints,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -841,7 +865,7 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: dataPoints.isEmpty 
+      body: tempPoints.isEmpty 
         ? const Center(child: Text("Waiting for sensor data..."))
         : SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 20.0),
@@ -852,8 +876,13 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
                 const SizedBox(height: 25),
                 _buildSummary(),
                 const SizedBox(height: 30),
-                _buildChart(),
+                const SectionTitle("TEMPERATURE PROFILE"),
+                _buildChart(tempPoints, const Color(0xFF1A237E), "°C", 4.0), // minDelta 4°C
                 const SizedBox(height: 30),
+                const SectionTitle("HUMIDITY PROFILE"),
+                _buildChart(humidityPoints, const Color(0xFF0288D1), "%", 10.0), // minDelta 10%
+                const SizedBox(height: 30),
+                const SectionTitle("EVENT HISTORY (LAST 5 CHECKPOINTS)"),
                 _buildLog(),
                 const SizedBox(height: 40),
               ],
@@ -884,11 +913,14 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
   }
 
   Widget _buildSummary() {
-    double avg = dataPoints.isEmpty ? 0 : dataPoints.map((e) => e.y).reduce((a, b) => a + b) / dataPoints.length;
+    double avgTemp = tempPoints.isEmpty ? 0 : tempPoints.map((e) => e.y).reduce((a, b) => a + b) / tempPoints.length;
+    double avgHum = humidityPoints.isEmpty ? 0 : humidityPoints.map((e) => e.y).reduce((a, b) => a + b) / humidityPoints.length;
     return Row(children: [
-      Expanded(child: _statCard("AVERAGE", "${avg.toStringAsFixed(1)}°C", Colors.blue)),
-      const SizedBox(width: 15),
-      Expanded(child: _statCard("DATAPOINTS", "${dataPoints.length}", Colors.indigo)),
+      Expanded(child: _statCard("AVG TEMP", "${avgTemp.toStringAsFixed(1)}°C", const Color(0xFF1A237E))),
+      const SizedBox(width: 12),
+      Expanded(child: _statCard("AVG HUMIDITY", "${avgHum.toStringAsFixed(1)}%", const Color(0xFF0288D1))),
+      const SizedBox(width: 12),
+      Expanded(child: _statCard("DATAPOINTS", "${tempPoints.length}", Colors.grey[800]!)),
     ]);
   }
 
@@ -898,40 +930,172 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: TextStyle(fontSize: 10, color: Colors.grey[500], fontWeight: FontWeight.w800)),
-        Text(val, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: col)),
+        Text(val, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
       ]),
     );
   }
 
-  Widget _buildChart() {
+  Widget _buildChart(List<FlSpot> spots, Color baseColor, String unit, double minDelta) {
+    if (spots.isEmpty) {
+      return Container(
+        height: 150,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+        child: Text("Waiting for data...", style: TextStyle(color: Colors.grey[400])),
+      );
+    }
+
+    double minX = spots.map((e) => e.x).reduce((a, b) => a < b ? a : b);
+    double maxX = spots.map((e) => e.x).reduce((a, b) => a > b ? a : b);
+    double xInterval = ((maxX - minX) / 5).ceilToDouble();
+    if (xInterval < 1) xInterval = 1;
+
+    double minY = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
+    double maxY = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
+    double delta = maxY - minY;
+    
+    if (delta < minDelta) {
+      // Impunem o plajă minimă (minDelta) pentru a preveni fluctuațiile minuscule să pară dramatice
+      double padding = (minDelta - delta) / 2;
+      minY = minY - padding;
+      maxY = maxY + padding;
+    } else {
+      // Padding standard de 15% pentru a preveni atingerea marginilor fizice ale graficului
+      double padding = delta * 0.15;
+      minY = minY - padding;
+      maxY = maxY + padding;
+    }
+
     return Container(
-      height: 250, padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
-      child: LineChart(LineChartData(
-        lineBarsData: [LineChartBarData(
-          spots: dataPoints, isCurved: true, color: const Color(0xFF1A237E), barWidth: 4, dotData: const FlDotData(show: false),
-          belowBarData: BarAreaData(show: true, color: const Color(0xFF1A237E).withOpacity(0.1)),
-        )],
-        titlesData: const FlTitlesData(show: false),
-        gridData: const FlGridData(show: false),
-        borderData: FlBorderData(show: false),
-      )),
+      height: 280,
+      padding: const EdgeInsets.only(top: 25, right: 25, left: 10, bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 15,
+            offset: const Offset(0, 10),
+          )
+        ],
+      ),
+      child: LineChart(
+        LineChartData(
+          minX: minX,
+          maxX: maxX,
+          minY: minY,
+          maxY: maxY,
+          lineTouchData: const LineTouchData(enabled: true),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              gradient: LinearGradient(
+                colors: [baseColor.withOpacity(0.7), baseColor],
+              ),
+              barWidth: 4,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  colors: [
+                    baseColor.withOpacity(0.2),
+                    baseColor.withOpacity(0.0),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            show: true,
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: xInterval,
+                getTitlesWidget: (value, meta) {
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    space: 8,
+                    child: Text(
+                      "C${value.toInt()}",
+                      style: TextStyle(color: Colors.grey[500], fontWeight: FontWeight.bold, fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 48,
+                getTitlesWidget: (value, meta) {
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    space: 8,
+                    child: Text(
+                      "${value.toStringAsFixed(1)}$unit",
+                      style: TextStyle(color: Colors.grey[500], fontWeight: FontWeight.bold, fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[100]!,
+                strokeWidth: 1,
+                dashArray: const [5, 5],
+              );
+            },
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+              left: BorderSide(color: Colors.grey[200]!, width: 1),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildLog() {
+    int logCount = tempPoints.length > 5 ? 5 : tempPoints.length;
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.01), blurRadius: 10)],
+      ),
       child: ListView.separated(
-        shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-        itemCount: dataPoints.length > 5 ? 5 : dataPoints.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
+        shrinkWrap: true, 
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: logCount,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF0F0F0)),
         itemBuilder: (context, index) {
-          final p = dataPoints[dataPoints.length - 1 - index];
+          final tPoint = tempPoints[tempPoints.length - 1 - index];
+          final hPoint = index < humidityPoints.length ? humidityPoints[humidityPoints.length - 1 - index] : null;
+          String humText = hPoint != null ? " | Hum: ${hPoint.y.toStringAsFixed(1)}%" : "";
+          
           return ListTile(
-            title: Text("${p.y.toStringAsFixed(1)} °C", style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Checkpoint ${p.x.toInt()}"),
-            leading: const Icon(Icons.history_rounded, size: 20),
+            title: Text(
+              "Temp: ${tPoint.y.toStringAsFixed(1)}°C$humText", 
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)
+            ),
+            subtitle: Text("Checkpoint ${tPoint.x.toInt()}", style: const TextStyle(fontSize: 11)),
+            leading: const Icon(Icons.history_rounded, size: 20, color: Colors.blueGrey),
           );
         },
       ),
