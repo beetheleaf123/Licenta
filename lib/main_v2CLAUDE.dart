@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
 
 // IMPORTURILE CATRE SERVICIILE NOI (V2)
 import 'mqtt_service_v2.dart';
@@ -72,6 +73,14 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
 
   final String serverIP = '192.168.1.137';
 
+  // --- STATE VARIABILE METEO ---
+  String _locationCity = "";
+  double _locationLat = 0.0;
+  double _locationLon = 0.0;
+  Map<String, dynamic>? _currentWeather;
+  List<dynamic> _forecastDays = [];
+  bool _isWeatherLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +128,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     _mqttService.subscribe('smarthome/thr/state'); // NOU: State THR
     _mqttService.subscribe('smarthome/wemos/ir'); // NOU: Receptor IR
     _mqttService.subscribe('smarthome/wemos/miscare'); // NOU: Senzor miscare radar
+    _mqttService.subscribe('smarthome/settings/location'); // NOU: Locație sincronizată RPi
   }
 
   void _processIncomingMessage(String topic, String message) {
@@ -173,6 +183,22 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
           ));
           if (_motionEvents.length > 100) {
             _motionEvents.removeLast();
+          }
+        }
+        else if (topic == 'smarthome/settings/location') {
+          try {
+            var data = jsonDecode(message);
+            final String city = data['city'] ?? "";
+            final double lat = (data['latitude'] as num).toDouble();
+            final double lon = (data['longitude'] as num).toDouble();
+            if (city.isNotEmpty && lat != 0.0 && lon != 0.0) {
+              _locationCity = city;
+              _locationLat = lat;
+              _locationLon = lon;
+              _fetchWeatherForecast(lat, lon, city);
+            }
+          } catch (e) {
+            print('[UI_ERROR] Eroare parsare locatie din MQTT: $e');
           }
         }
       } catch (e) {
@@ -271,6 +297,8 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                 fullWidth: true,
               ),
 
+              const SizedBox(height: 30),
+              _buildWeatherCard(),
               const SizedBox(height: 30),
               const SectionTitle("LIGHTING CONTROL"),
               _buildBulbCard(),
@@ -516,6 +544,417 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
             Text("VIEW DETAILED ANALYTICS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
           ],
         ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _getWmoDetails(int code) {
+    switch (code) {
+      case 0:
+        return {'desc': 'Senin', 'icon': Icons.wb_sunny_rounded, 'color': Colors.amber};
+      case 1:
+      case 2:
+      case 3:
+        return {'desc': 'Parțial Noros', 'icon': Icons.cloud_queue_rounded, 'color': Colors.blueGrey};
+      case 45:
+      case 48:
+        return {'desc': 'Ceață', 'icon': Icons.blur_on_rounded, 'color': Colors.grey};
+      case 51:
+      case 53:
+      case 55:
+        return {'desc': 'Boabă de ploaie', 'icon': Icons.grain_rounded, 'color': Colors.lightBlue};
+      case 61:
+      case 63:
+      case 65:
+        return {'desc': 'Ploaie', 'icon': Icons.umbrella_rounded, 'color': Colors.blue};
+      case 71:
+      case 73:
+      case 75:
+        return {'desc': 'Ninsori', 'icon': Icons.ac_unit_rounded, 'color': Colors.lightBlueAccent};
+      case 80:
+      case 81:
+      case 82:
+        return {'desc': 'Averse de ploaie', 'icon': Icons.beach_access_rounded, 'color': Colors.blue};
+      case 95:
+      case 96:
+      case 99:
+        return {'desc': 'Furtună', 'icon': Icons.thunderstorm_rounded, 'color': Colors.deepPurple};
+      default:
+        return {'desc': 'Necunoscut', 'icon': Icons.wb_cloudy_rounded, 'color': Colors.grey};
+    }
+  }
+
+  String _getDayName(String dateStr) {
+    try {
+      DateTime dt = DateTime.parse(dateStr);
+      final now = DateTime.now();
+      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+        return "Azi";
+      }
+      List<String> days = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"];
+      return days[dt.weekday - 1];
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  Future<void> _fetchWeatherForecast(double lat, double lon, String city) async {
+    if (!mounted) return;
+    setState(() {
+      _isWeatherLoading = true;
+    });
+
+    try {
+      final url = 'https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max&timezone=auto';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final daily = data['daily'] ?? {};
+        setState(() {
+          _currentWeather = data['current_weather'];
+          _forecastDays = [];
+          if (daily['time'] != null) {
+            final times = daily['time'] as List;
+            for (int i = 0; i < times.length; i++) {
+              _forecastDays.add({
+                'date': times[i],
+                'weathercode': daily['weathercode']?[i] ?? 0,
+                'temp_max': daily['temperature_2m_max']?[i] ?? 0.0,
+                'temp_min': daily['temperature_2m_min']?[i] ?? 0.0,
+                'sunrise': daily['sunrise']?[i] ?? "",
+                'sunset': daily['sunset']?[i] ?? "",
+                'rain_chance': daily['precipitation_probability_max']?[i] ?? 0,
+              });
+            }
+          }
+          _locationCity = city;
+          _locationLat = lat;
+          _locationLon = lon;
+          _isWeatherLoading = false;
+        });
+      } else {
+        setState(() => _isWeatherLoading = false);
+      }
+    } catch (e) {
+      print('[UI_ERROR] Eroare descarcare prognoza meteo: $e');
+      if (mounted) {
+        setState(() => _isWeatherLoading = false);
+      }
+    }
+  }
+
+  Future<void> _updateLocation(String city, double lat, double lon) async {
+    await _fetchWeatherForecast(lat, lon, city);
+    
+    String sunriseStr = "";
+    String sunsetStr = "";
+    if (_forecastDays.isNotEmpty) {
+      final today = _forecastDays.first;
+      if (today['sunrise'] != null && today['sunrise'].toString().contains('T')) {
+        sunriseStr = today['sunrise'].toString().split('T').last;
+      } else {
+        sunriseStr = today['sunrise']?.toString() ?? "";
+      }
+      if (today['sunset'] != null && today['sunset'].toString().contains('T')) {
+        sunsetStr = today['sunset'].toString().split('T').last;
+      } else {
+        sunsetStr = today['sunset']?.toString() ?? "";
+      }
+    }
+    
+    final payload = jsonEncode({
+      'city': city,
+      'latitude': lat,
+      'longitude': lon,
+      'sunrise': sunriseStr,
+      'sunset': sunsetStr,
+    });
+    _mqttService.publish('smarthome/settings/location', payload);
+  }
+
+  Widget _buildWeatherCard() {
+    if (_locationCity.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            )
+          ],
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.wb_sunny_outlined, size: 48, color: Colors.indigo),
+            const SizedBox(height: 12),
+            const Text(
+              "Nicio locație configurată",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              "Configurează un oraș pentru a vedea prognoza meteo locală și coordonatele astronomice.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _showCitySearchDialog,
+              icon: const Icon(Icons.search),
+              label: const Text("Selectează Oraș"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isWeatherLoading && _currentWeather == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final currentTemp = _currentWeather != null ? _currentWeather!['temperature']?.toString() ?? '--' : '--';
+    final wmoCode = _currentWeather != null ? (_currentWeather!['weathercode'] as num?)?.toInt() ?? 0 : 0;
+    final wmo = _getWmoDetails(wmoCode);
+    final wmoDesc = wmo['desc'] as String;
+    final wmoIcon = wmo['icon'] as IconData;
+    final wmoColor = wmo['color'] as Color;
+
+    String sunriseTime = "--:--";
+    String sunsetTime = "--:--";
+    int rainChance = 0;
+    if (_forecastDays.isNotEmpty) {
+      final today = _forecastDays.first;
+      rainChance = (today['rain_chance'] as num?)?.toInt() ?? 0;
+      if (today['sunrise'] != null && today['sunrise'].toString().contains('T')) {
+        sunriseTime = today['sunrise'].toString().split('T').last;
+      }
+      if (today['sunset'] != null && today['sunset'].toString().contains('T')) {
+        sunsetTime = today['sunset'].toString().split('T').last;
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3C72), Color(0xFF2A5298)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E3C72).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          )
+        ],
+      ),
+      padding: const EdgeInsets.all(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 20),
+                  const SizedBox(width: 6),
+                  Text(
+                    _locationCity,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_location_alt_rounded, color: Colors.white70),
+                onPressed: _showCitySearchDialog,
+                tooltip: "Schimbă Orașul",
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "$currentTemp",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 48,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Text(
+                        "°C",
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    wmoDesc,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(wmoIcon, color: wmoColor, size: 48),
+              ),
+            ],
+          ),
+          
+          const Divider(height: 30, color: Colors.white24),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildWeatherInfoItem(Icons.light_mode_rounded, "Răsărit", sunriseTime, Colors.orangeAccent),
+              _buildWeatherInfoItem(Icons.nights_stay_rounded, "Apus", sunsetTime, Colors.deepPurpleAccent),
+              _buildWeatherInfoItem(Icons.water_drop_rounded, "Precipit.", "$rainChance%", Colors.lightBlueAccent),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+          const Text(
+            "PROGNOZĂ 5 ZILE",
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          SizedBox(
+            height: 115,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _forecastDays.length > 5 ? 5 : _forecastDays.length,
+              itemBuilder: (context, index) {
+                final day = _forecastDays[index];
+                final dayName = _getDayName(day['date']);
+                final code = (day['weathercode'] as num?)?.toInt() ?? 0;
+                final details = _getWmoDetails(code);
+                final dIcon = details['icon'] as IconData;
+                final dColor = details['color'] as Color;
+                final maxT = (day['temp_max'] as num?)?.toDouble() ?? 0.0;
+                final minT = (day['temp_min'] as num?)?.toDouble() ?? 0.0;
+                final rChance = (day['rain_chance'] as num?)?.toInt() ?? 0;
+
+                return Container(
+                  width: 78,
+                  margin: const EdgeInsets.only(right: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        dayName,
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      Icon(dIcon, color: dColor, size: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "${maxT.toStringAsFixed(0)}°",
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            "${minT.toStringAsFixed(0)}°",
+                            style: const TextStyle(color: Colors.white60, fontSize: 9),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.water_drop, color: Colors.lightBlueAccent, size: 9),
+                          const SizedBox(width: 2),
+                          Text(
+                            "$rChance%",
+                            style: const TextStyle(color: Colors.white70, fontSize: 8, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeatherInfoItem(IconData icon, String title, String value, Color iconColor) {
+    return Column(
+      children: [
+        Icon(icon, color: iconColor, size: 22),
+        const SizedBox(height: 6),
+        Text(
+          title,
+          style: const TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  void _showCitySearchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => CitySearchDialog(
+        onCitySelected: (city, lat, lon) {
+          _updateLocation(city, lat, lon);
+        },
       ),
     );
   }
@@ -2339,6 +2778,159 @@ class _MotionSensorPageState extends State<MotionSensorPage> with SingleTickerPr
               ),
         ),
       ],
+    );
+  }
+}
+
+class CitySearchDialog extends StatefulWidget {
+  final Function(String city, double lat, double lon) onCitySelected;
+  const CitySearchDialog({super.key, required this.onCitySelected});
+
+  @override
+  State<CitySearchDialog> createState() => _CitySearchDialogState();
+}
+
+class _CitySearchDialogState extends State<CitySearchDialog> {
+  final _searchController = TextEditingController();
+  List<dynamic> _suggestions = [];
+  bool _isLoading = false;
+  String _errorMessage = "";
+
+  Future<void> _searchCity(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = "";
+      _suggestions = [];
+    });
+
+    try {
+      final url = 'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeComponent(query)}&count=5&language=ro&format=json';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = data['results'];
+        setState(() {
+          _suggestions = results ?? [];
+          if (_suggestions.isEmpty) {
+            _errorMessage = "Niciun oraș găsit.";
+          }
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = "Eroare server geocodare.";
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Eroare rețea/căutare.";
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 8,
+      backgroundColor: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        width: MediaQuery.of(context).size.width * 0.9,
+        constraints: const BoxConstraints(maxHeight: 450),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Caută Oraș",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF2D3142)),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: "Introdu numele orașului...",
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send_rounded, color: Colors.blue),
+                  onPressed: () => _searchCity(_searchController.text),
+                ),
+                filled: true,
+                fillColor: const Color(0xFFF5F7FB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onSubmitted: _searchCity,
+            ),
+            const SizedBox(height: 15),
+            
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              
+            if (_errorMessage.isNotEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Text(_errorMessage, style: TextStyle(color: Colors.red[800], fontWeight: FontWeight.bold)),
+                ),
+              ),
+              
+            if (!_isLoading && _suggestions.isNotEmpty)
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  itemBuilder: (context, index) {
+                    final item = _suggestions[index];
+                    final String name = item['name'] ?? "";
+                    final String admin1 = item['admin1'] ?? "";
+                    final String country = item['country'] ?? "";
+                    final double lat = (item['latitude'] as num).toDouble();
+                    final double lon = (item['longitude'] as num).toDouble();
+                    
+                    final String subtitle = "${admin1.isNotEmpty ? '$admin1, ' : ''}$country";
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFFE3F2FD),
+                        child: Icon(Icons.location_city_rounded, color: Colors.blue),
+                      ),
+                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+                      trailing: Text(
+                        "${lat.toStringAsFixed(2)}, ${lon.toStringAsFixed(2)}",
+                        style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                      ),
+                      onTap: () {
+                        widget.onCitySelected(name, lat, lon);
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
