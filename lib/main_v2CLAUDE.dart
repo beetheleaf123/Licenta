@@ -1221,18 +1221,152 @@ class AutomationsPage extends StatefulWidget {
 }
 
 class _AutomationsPageState extends State<AutomationsPage> {
-  String? selectedDevice;
-  String? selectedSensor;
-  double threshold = 100.0;
   late double _luxThreshold;
-
-  final List<String> devices = ["Priză S60", "Bec Philips WiZ", "Switch Sonoff"];
-  final List<String> sensors = ["Senzor Lumini (Lux)"];
+  List<dynamic> _rules = [];
+  bool _isLoading = true;
+  StreamSubscription? _mqttSubscription;
 
   @override
   void initState() {
     super.initState();
     _luxThreshold = widget.lightThreshold;
+
+    // Subscriere la topicul de reguli
+    widget.mqttService.subscribe('smarthome/rules/list');
+
+    // Ascultăm mesajele MQTT
+    _mqttSubscription = widget.mqttService.messageStream.listen((data) {
+      if (data['topic'] == 'smarthome/rules/list') {
+        try {
+          final decoded = jsonDecode(data['payload']);
+          if (decoded is List) {
+            setState(() {
+              _rules = decoded;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          print('[UI_ERROR] Eroare decodare reguli: $e');
+        }
+      }
+    });
+
+    // Trimitem o cerere pentru a obține regulile actuale
+    Timer(const Duration(milliseconds: 500), () {
+      widget.mqttService.publish('smarthome/rules/get', '');
+    });
+  }
+
+  @override
+  void dispose() {
+    _mqttSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _toggleRuleActive(Map<String, dynamic> rule, bool active) {
+    final updatedRule = Map<String, dynamic>.from(rule);
+    updatedRule['is_active'] = active ? 1 : 0;
+    widget.mqttService.publish('smarthome/rules/save', jsonEncode(updatedRule));
+  }
+
+  void _deleteRule(int ruleId) {
+    widget.mqttService.publish('smarthome/rules/delete', ruleId.toString());
+  }
+
+  void _openAddRuleSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const AddRuleBottomSheet(),
+    ).then((result) {
+      if (result != null && result is Map<String, dynamic>) {
+        widget.mqttService.publish('smarthome/rules/save', jsonEncode(result));
+      }
+    });
+  }
+
+  String _getSensorName(String code) {
+    switch (code) {
+      case 'temperature': return 'Temperatură';
+      case 'humidity': return 'Umiditate';
+      case 'luminosity': return 'Luminozitate';
+      case 'motion': return 'Mișcare';
+      default: return code;
+    }
+  }
+
+  IconData _getSensorIcon(String code) {
+    switch (code) {
+      case 'temperature': return Icons.thermostat_rounded;
+      case 'humidity': return Icons.water_drop_rounded;
+      case 'luminosity': return Icons.wb_sunny_rounded;
+      case 'motion': return Icons.directions_walk_rounded;
+      default: return Icons.sensors_rounded;
+    }
+  }
+
+  Color _getSensorColor(String code) {
+    switch (code) {
+      case 'temperature': return Colors.orange;
+      case 'humidity': return Colors.blue;
+      case 'luminosity': return Colors.amber;
+      case 'motion': return Colors.teal;
+      default: return Colors.grey;
+    }
+  }
+
+  String _getDeviceName(String code) {
+    switch (code) {
+      case 'bulb': return 'Bec Philips WiZ';
+      case 'plug': return 'Priză S60';
+      case 'thr': return 'Switch Sonoff THR';
+      default: return code;
+    }
+  }
+
+  IconData _getDeviceIcon(String code) {
+    switch (code) {
+      case 'bulb': return Icons.lightbulb_outline_rounded;
+      case 'plug': return Icons.power_rounded;
+      case 'thr': return Icons.settings_input_component_rounded;
+      default: return Icons.device_unknown_rounded;
+    }
+  }
+
+  Color _getDeviceColor(String code) {
+    switch (code) {
+      case 'bulb': return Colors.orange;
+      case 'plug': return Colors.green;
+      case 'thr': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  String _formatRuleExplanation(Map<String, dynamic> rule) {
+    final sensor = _getSensorName(rule['sensor']);
+    final op = rule['operator'];
+    final thresh = rule['threshold'];
+    final device = _getDeviceName(rule['target_device']);
+    final state = rule['target_state'] == 'ON' ? 'PORNIT' : 'OPRIT';
+
+    if (rule['sensor'] == 'motion') {
+      return 'Dacă se detectează mișcare 🏃, atunci comută $device pe $state.';
+    } else {
+      String unit = '';
+      if (rule['sensor'] == 'temperature') unit = '°C';
+      if (rule['sensor'] == 'humidity') unit = '%';
+      if (rule['sensor'] == 'luminosity') unit = ' lx';
+
+      String opText = op;
+      if (op == '<') opText = 'scade sub';
+      if (op == '>') opText = 'depășește';
+      if (op == '==') opText = 'este egal cu';
+      if (op == '<=') opText = 'este mai mic sau egal cu';
+      if (op == '>=') opText = 'este mai mare sau egal cu';
+
+      return 'Dacă $sensor $opText ${thresh.toStringAsFixed(1)}$unit, atunci comută $device pe $state.';
+    }
   }
 
   @override
@@ -1243,148 +1377,605 @@ class _AutomationsPageState extends State<AutomationsPage> {
         title: const Text("AUTOMATIZĂRI", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(25),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- SECTIUNEA AUTO-LIGHT THRESHOLD (MUTATA DIN DASHBOARD) ---
-            const Text(
-              "Automatizare Lumini",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1A237E)),
-            ),
-            const SizedBox(height: 8),
-            const Text("Becul se aprinde automat când luminozitatea scade sub pragul setat."),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(24),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openAddRuleSheet,
+        backgroundColor: Colors.indigo[900],
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text("REGULĂ NOUĂ", style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          widget.mqttService.publish('smarthome/rules/get', '');
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- AUTOMATIZARE LUMINI (LEGACY) ---
+              const Text(
+                "Setări Globale",
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.blueGrey, letterSpacing: 1.5),
               ),
-              child: Column(
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                              child: const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 24),
+                            ),
+                            const SizedBox(width: 15),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Auto-Light Threshold", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2D3142))),
+                                Text("Prag implicit pentru Wemos", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Text("${_luxThreshold.toInt()} lx", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Slider(
+                      value: _luxThreshold,
+                      min: 0,
+                      max: 500,
+                      divisions: 50,
+                      label: "${_luxThreshold.toInt()} lx",
+                      activeColor: Colors.indigo[900],
+                      onChanged: (val) {
+                        setState(() => _luxThreshold = val);
+                        widget.onThresholdChanged(val);
+                      },
+                      onChangeEnd: (val) {
+                        widget.mqttService.publish("smarthome/settings/update", val.toInt().toString());
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
+
+              // --- REGULI CONDITIONALE ---
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                            child: const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 24),
-                          ),
-                          const SizedBox(width: 15),
-                          const Text("Auto-Light Threshold", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      Text("${_luxThreshold.toInt()} lx", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
+                  const Text(
+                    "Reguli Condiționale Active",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.blueGrey, letterSpacing: 1.5),
                   ),
-                  const SizedBox(height: 10),
-                  Slider(
-                    value: _luxThreshold,
-                    min: 0,
-                    max: 500,
-                    divisions: 50,
-                    label: "${_luxThreshold.toInt()} lx",
-                    activeColor: Colors.indigo,
-                    onChanged: (val) {
-                      setState(() => _luxThreshold = val);
-                      widget.onThresholdChanged(val);
-                    },
-                    onChangeEnd: (val) {
-                      widget.mqttService.publish("smarthome/settings/update", val.toInt().toString());
-                    },
-                  ),
+                  if (_isLoading)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.indigo),
+                    ),
                 ],
               ),
-            ),
+              const SizedBox(height: 15),
 
-            const SizedBox(height: 40),
-            const Divider(),
-            const SizedBox(height: 20),
+              _isLoading
+                  ? _buildShimmerLoading()
+                  : _rules.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _rules.length,
+                          itemBuilder: (context, index) {
+                            final rule = _rules[index] as Map<String, dynamic>;
+                            final isRuleActive = (rule['is_active'] ?? 1) == 1;
 
-            // --- SECTIUNEA CONFIGURARE REGULA NOUA ---
-            const Text(
-              "Configurează o regulă nouă", 
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1A237E))
-            ),
-            const SizedBox(height: 10),
-            const Text("Alege un dispozitiv care să fie controlat automat în funcție de valorile unui senzor."),
-            
-            const SizedBox(height: 40),
-            
-            _buildDropdownLabel("1. Selectează Dispozitivul"),
-            _buildDropdown(devices, selectedDevice, (val) => setState(() => selectedDevice = val)),
-            
-            const SizedBox(height: 30),
-            
-            _buildDropdownLabel("2. Selectează Senzorul Sursă"),
-            _buildDropdown(sensors, selectedSensor, (val) => setState(() => selectedSensor = val)),
-            
-            const SizedBox(height: 30),
-            
-            _buildDropdownLabel("3. Prag Declanșare: ${threshold.toInt()} lx"),
-            Slider(
-              value: threshold,
-              min: 0,
-              max: 1000,
-              divisions: 20,
-              activeColor: Colors.indigo,
-              onChanged: (v) => setState(() => threshold = v),
-            ),
-            
-            const SizedBox(height: 50),
-            
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                onPressed: (selectedDevice != null && selectedSensor != null) 
-                  ? () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Automatizare salvată cu succes!"))
-                      );
-                    } 
-                  : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  elevation: 5,
-                ),
-                child: const Text("SALVEAZĂ AUTOMATIZAREA", style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 15),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 10, offset: const Offset(0, 5))],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      left: BorderSide(
+                                        color: _getSensorColor(rule['sensor']).withOpacity(0.8),
+                                        width: 6,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Theme(
+                                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: _getSensorColor(rule['sensor']).withOpacity(0.1),
+                                        child: Icon(_getSensorIcon(rule['sensor']), color: _getSensorColor(rule['sensor'])),
+                                      ),
+                                      title: Text(
+                                        rule['name'].toString().isNotEmpty ? rule['name'] : 'Regulă Fără Nume',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                          color: const Color(0xFF2D3142),
+                                          decoration: isRuleActive ? TextDecoration.none : TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        'Senzor: ${_getSensorName(rule['sensor'])}',
+                                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                                      ),
+                                      trailing: Switch(
+                                        value: isRuleActive,
+                                        activeColor: Colors.indigo[900],
+                                        onChanged: (val) => _toggleRuleActive(rule, val),
+                                      ),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 15),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Divider(height: 10),
+                                              const SizedBox(height: 10),
+                                              Row(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  const Icon(Icons.arrow_right_alt_rounded, color: Colors.indigo, size: 20),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      _formatRuleExplanation(rule),
+                                                      style: const TextStyle(fontSize: 13, height: 1.4, fontWeight: FontWeight.w500),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 15),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        _getDeviceIcon(rule['target_device']),
+                                                        size: 16,
+                                                        color: _getDeviceColor(rule['target_device']),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        _getDeviceName(rule['target_device']),
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors.grey[600],
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  TextButton.icon(
+                                                    onPressed: () => _deleteRule(rule['id']),
+                                                    icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                                                    label: const Text("Șterge", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                                    style: TextButton.styleFrom(
+                                                      foregroundColor: Colors.red[700],
+                                                      padding: EdgeInsets.zero,
+                                                      minimumSize: const Size(50, 30),
+                                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildDropdownLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, left: 4),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+  Widget _buildEmptyState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.rule_folder_outlined, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 15),
+          const Text(
+            "Nu ai nicio regulă definită",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF2D3142)),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Creează reguli de tip Dacă / Atunci când folosind butonul de mai jos.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildDropdown(List<String> items, String? currentVal, Function(String?) onChange) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+  Widget _buildShimmerLoading() {
+    return Column(
+      children: List.generate(
+        3,
+        (index) => Container(
+          height: 70,
+          margin: const EdgeInsets.only(bottom: 15),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ),
+        ),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: currentVal,
-          isExpanded: true,
-          hint: const Text("Alege o opțiune"),
-          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-          onChanged: onChange,
+    );
+  }
+}
+
+class AddRuleBottomSheet extends StatefulWidget {
+  const AddRuleBottomSheet({super.key});
+
+  @override
+  State<AddRuleBottomSheet> createState() => _AddRuleBottomSheetState();
+}
+
+class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+
+  String _selectedSensor = 'temperature';
+  String _selectedOperator = '>';
+  double _threshold = 25.0;
+  String _selectedDevice = 'bulb';
+  String _selectedState = 'ON';
+
+  // Opțiuni dropdown
+  final List<Map<String, String>> _sensors = [
+    {'value': 'temperature', 'label': 'Temperatură (°C)'},
+    {'value': 'humidity', 'label': 'Umiditate (%)'},
+    {'value': 'luminosity', 'label': 'Luminozitate (lux)'},
+    {'value': 'motion', 'label': 'Senzor Mișcare (Radar)'},
+  ];
+
+  final List<Map<String, String>> _operators = [
+    {'value': '>', 'label': 'Mai mare ca (>)'},
+    {'value': '<', 'label': 'Mai mic ca (<)'},
+    {'value': '==', 'label': 'Egal cu (==)'},
+  ];
+
+  final List<Map<String, String>> _devices = [
+    {'value': 'bulb', 'label': 'Bec Philips WiZ'},
+    {'value': 'plug', 'label': 'Priză Smart S60'},
+    {'value': 'thr', 'label': 'Switch Sonoff THR'},
+  ];
+
+  final List<Map<String, String>> _states = [
+    {'value': 'ON', 'label': 'Pornit (ON)'},
+    {'value': 'OFF', 'label': 'Oprit (OFF)'},
+  ];
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Ajustăm slider-ul în funcție de senzorul selectat
+    double sliderMin = 0.0;
+    double sliderMax = 100.0;
+    int sliderDivisions = 100;
+    String sliderLabel = '';
+
+    if (_selectedSensor == 'temperature') {
+      sliderMin = 0.0;
+      sliderMax = 50.0;
+      sliderDivisions = 100;
+      sliderLabel = '${_threshold.toStringAsFixed(1)} °C';
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+    } else if (_selectedSensor == 'humidity') {
+      sliderMin = 0.0;
+      sliderMax = 100.0;
+      sliderDivisions = 100;
+      sliderLabel = '${_threshold.toInt()}%';
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+    } else if (_selectedSensor == 'luminosity') {
+      sliderMin = 0.0;
+      sliderMax = 1000.0;
+      sliderDivisions = 100;
+      sliderLabel = '${_threshold.toInt()} lx';
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+    }
+
+    final isMotion = _selectedSensor == 'motion';
+
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        top: 20,
+        left: 20,
+        right: 20,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF5F7FB),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(28),
+          topRight: Radius.circular(28),
+        ),
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Indicator de tragere sus
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(Icons.add_task_rounded, color: Colors.indigo[900], size: 24),
+                  const SizedBox(width: 10),
+                  const Text(
+                    "Creează Regulă Nouă",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3142)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Câmp text Nume Regulă
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: "Nume Regulă (opțional)",
+                  hintText: "ex: Oprește căldura dacă e cald",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.label_outline_rounded),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Dropdown Senzor Sursă
+              DropdownButtonFormField<String>(
+                value: _selectedSensor,
+                decoration: InputDecoration(
+                  labelText: "1. Senzor Sursă",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.sensors_rounded),
+                ),
+                items: _sensors
+                    .map((s) => DropdownMenuItem(value: s['value'], child: Text(s['label']!)))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _selectedSensor = val;
+                      if (val == 'motion') {
+                        _selectedOperator = 'motion_detected';
+                        _threshold = 0.0;
+                      } else {
+                        _selectedOperator = '>';
+                        _threshold = val == 'temperature' ? 25.0 : val == 'humidity' ? 50.0 : 100.0;
+                      }
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 20),
+
+              if (!isMotion) ...[
+                // Dropdown Operator Condiție (doar dacă nu este mișcare)
+                DropdownButtonFormField<String>(
+                  value: _selectedOperator,
+                  decoration: InputDecoration(
+                    labelText: "2. Condiție / Operator",
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      borderSide: BorderSide.none,
+                    ),
+                    prefixIcon: const Icon(Icons.compare_arrows_rounded),
+                  ),
+                  items: _operators
+                      .map((op) => DropdownMenuItem(value: op['value'], child: Text(op['label']!)))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedOperator = val);
+                    }
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // Slider pentru Prag
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Valoare Prag",
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                          ),
+                          Text(
+                            sliderLabel,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.indigo),
+                          ),
+                        ],
+                      ),
+                      Slider(
+                        value: _threshold,
+                        min: sliderMin,
+                        max: sliderMax,
+                        divisions: sliderDivisions,
+                        label: sliderLabel,
+                        activeColor: Colors.indigo,
+                        onChanged: (v) => setState(() => _threshold = v),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Dropdown Dispozitiv Țintă
+              DropdownButtonFormField<String>(
+                value: _selectedDevice,
+                decoration: InputDecoration(
+                  labelText: isMotion ? "2. Controlează Dispozitivul" : "3. Controlează Dispozitivul",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.devices_other_rounded),
+                ),
+                items: _devices
+                    .map((d) => DropdownMenuItem(value: d['value'], child: Text(d['label']!)))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _selectedDevice = val);
+                  }
+                },
+              ),
+              const SizedBox(height: 20),
+
+              // Dropdown Stare Dispozitiv
+              DropdownButtonFormField<String>(
+                value: _selectedState,
+                decoration: InputDecoration(
+                  labelText: isMotion ? "3. Stare Dorită" : "4. Stare Dorită",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.power_settings_new_rounded),
+                ),
+                items: _states
+                    .map((st) => DropdownMenuItem(value: st['value'], child: Text(st['label']!)))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _selectedState = val);
+                  }
+                },
+              ),
+              const SizedBox(height: 35),
+
+              // Buton de Salvare
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      String finalName = _nameController.text.trim();
+                      if (finalName.isEmpty) {
+                        finalName = "Regulă ${_selectedSensor == 'motion' ? 'Mișcare' : _selectedSensor == 'temperature' ? 'Climă' : _selectedSensor == 'humidity' ? 'Umiditate' : 'Lumină'}";
+                      }
+                      
+                      final rule = {
+                        "name": finalName,
+                        "sensor": _selectedSensor,
+                        "operator": _selectedOperator,
+                        "threshold": _threshold,
+                        "target_device": _selectedDevice,
+                        "target_state": _selectedState,
+                        "is_active": 1
+                      };
+                      Navigator.pop(context, rule);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo[900],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    elevation: 5,
+                  ),
+                  child: const Text("SALVEAZĂ REGULA", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
         ),
       ),
     );
