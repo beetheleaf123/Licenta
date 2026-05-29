@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 // IMPORTURILE CATRE SERVICIILE NOI (V2)
 import 'mqtt_service_v2.dart';
 import 'api_service_v2.dart';
+import 'chat_screen.dart';
 
 /// main_v2CLAUDE.dart - Versiunea cu tab "Receptor IR" adaugat.
 /// Aceasta versiune foloseste MqttServiceV2 si ApiServiceV2 pentru stabilitate maxima.
@@ -352,12 +353,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                 ],
               ),
               const SizedBox(height: 15),
-              // BUTON DEBUGGING (conține IR + Mișcare) - Centrat pe ecran (folosind flex layout sigur)
+              // BUTOANE NAVIGARE: DEBUGGING ȘI CHATBOT AI (simetrice, ambele Expanded)
               Row(
                 children: [
-                  const Spacer(),
                   Expanded(
-                    flex: 2,
                     child: _buildNavigationButton(
                       "Debugging", 
                       Icons.bug_report_rounded, 
@@ -374,7 +373,22 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                       )
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: _buildGradientNavigationButton(
+                      "Luffy Chat", 
+                      Icons.smart_toy_rounded, 
+                      [const Color(0xFF0D9488), const Color(0xFF0F766E)], // Gradient Verde-Teal premium
+                      () => Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (context) => ChatScreen(
+                            mqttService: _mqttService,
+                          )
+                        )
+                      )
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 50),
@@ -389,6 +403,45 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     if (connectionStatus == MqttStatus.connected) return Colors.green;
     if (connectionStatus == MqttStatus.error) return Colors.red;
     return Colors.orange;
+  }
+
+  // Widget auxiliar pentru butoanele de navigare cu gradient (folosit pentru Chatbot AI)
+  Widget _buildGradientNavigationButton(String label, IconData icon, List<Color> colors, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: colors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            )
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.white, size: 32),
+            const SizedBox(height: 10),
+            Text(
+              label, 
+              style: const TextStyle(
+                fontWeight: FontWeight.bold, 
+                color: Colors.white, 
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Widget auxiliar pentru butoanele de navigare de la finalul paginii
