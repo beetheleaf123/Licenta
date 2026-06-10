@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'mqtt_service_v2.dart';
 import 'api_service_v2.dart';
 import 'chat_screen.dart';
+import 'notifications_screen.dart';
 
 /// main_v2CLAUDE.dart - Versiunea cu tab "Receptor IR" adaugat.
 /// Aceasta versiune foloseste MqttServiceV2 si ApiServiceV2 pentru stabilitate maxima.
@@ -72,6 +73,9 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
   final List<MotionEvent> _motionEvents = [];
   int _motionCounter = 0;
 
+  // --- NOU: LISTA REGULI (pentru a fi transmisă la NotificationsScreen) ---
+  List<dynamic> _automationRules = [];
+
   final String serverIP = '192.168.1.137';
 
   // --- STATE VARIABILE METEO ---
@@ -128,8 +132,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     _mqttService.subscribe('smarthome/bulb/state');
     _mqttService.subscribe('smarthome/thr/state'); // NOU: State THR
     _mqttService.subscribe('smarthome/wemos/ir'); // NOU: Receptor IR
+    // smarthome/wemos/ir/raw eliminat - captura foloseste direct smarthome/wemos/ir
     _mqttService.subscribe('smarthome/wemos/miscare'); // NOU: Senzor miscare radar
     _mqttService.subscribe('smarthome/settings/location'); // NOU: Locație sincronizată RPi
+    _mqttService.subscribe('smarthome/rules/list'); // NOU: Lista reguli (pentru Notificări)
   }
 
   void _processIncomingMessage(String topic, String message) {
@@ -200,6 +206,16 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
             }
           } catch (e) {
             print('[UI_ERROR] Eroare parsare locatie din MQTT: $e');
+          }
+        }
+        else if (topic == 'smarthome/rules/list') {
+          try {
+            final decoded = jsonDecode(message);
+            if (decoded is List) {
+              _automationRules = decoded;
+            }
+          } catch (e) {
+            print('[UI_ERROR] Eroare parsare rules/list in dashboard: $e');
           }
         }
       } catch (e) {
@@ -375,10 +391,30 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                   ),
                   const SizedBox(width: 15),
                   Expanded(
+                    child: _buildNavigationButton(
+                      "Notificări",
+                      Icons.notifications_active_rounded,
+                      const Color(0xFF7C3AED),
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => NotificationsScreen(
+                            mqttService: _mqttService,
+                            automationRules: _automationRules,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
                     child: _buildGradientNavigationButton(
                       "Luffy Chat", 
                       Icons.smart_toy_rounded, 
-                      [const Color(0xFF0D9488), const Color(0xFF0F766E)], // Gradient Verde-Teal premium
+                      [const Color(0xFF0D9488), const Color(0xFF0F766E)],
                       () => Navigator.push(
                         context, 
                         MaterialPageRoute(
@@ -651,6 +687,20 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     }
   }
 
+  String _formatCurrentTime() {
+    final now = DateTime.now();
+    final hour = now.hour.toString().padLeft(2, '0');
+    final minute = now.minute.toString().padLeft(2, '0');
+    final List<String> days = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"];
+    final dayName = days[now.weekday - 1];
+    final List<String> months = [
+      "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
+      "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"
+    ];
+    final monthName = months[now.month - 1];
+    return "$dayName, ${now.day} $monthName - $hour:$minute";
+  }
+
   Future<void> _fetchWeatherForecast(double lat, double lon, String city) async {
     if (!mounted) return;
     setState(() {
@@ -818,18 +868,25 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 20),
+                        // SizedBox forțează aceeași lățime ca iconița de ceas
+                        SizedBox(
+                          width: 20,
+                          child: const Icon(Icons.location_on_rounded, color: Colors.redAccent, size: 20),
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           _locationCity,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -839,15 +896,52 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                         ),
                       ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.edit_location_alt_rounded, color: Colors.white70),
-                      onPressed: _showCitySearchDialog,
-                      tooltip: "Schimbă Orașul",
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        // SizedBox identic — textul de dată va începe la același X
+                        SizedBox(
+                          width: 20,
+                          child: const Icon(Icons.access_time_filled_rounded, color: Colors.white70, size: 14),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatCurrentTime(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 15),
-
+                // Container identic ca cercul meteo (padding:16 + icon:48) = 80px total
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: Center(
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.edit_location_alt_rounded, color: Colors.white70, size: 28),
+                      onPressed: _showCitySearchDialog,
+                      tooltip: "Schimbă Orașul",
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 15),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -895,9 +989,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                     ),
                   ],
                 ),
-                
                 const Divider(height: 30, color: Colors.white24),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -906,7 +998,6 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
                     _buildWeatherInfoItem(Icons.water_drop_rounded, "Precipit.", "$rainChance%", Colors.lightBlueAccent),
                   ],
                 ),
-
                 const SizedBox(height: 20),
                 const Text(
                   "PROGNOZĂ 5 ZILE",
@@ -921,7 +1012,6 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
               ],
             ),
           ),
-
           SizedBox(
             height: 115,
             child: ListView.builder(
@@ -1781,7 +1871,7 @@ class _AutomationsPageState extends State<AutomationsPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const AddRuleBottomSheet(),
+      builder: (context) => AddRuleBottomSheet(mqttService: widget.mqttService),
     ).then((result) {
       if (result != null && result is Map<String, dynamic>) {
         widget.mqttService.publish('smarthome/rules/save', jsonEncode(result));
@@ -1795,6 +1885,10 @@ class _AutomationsPageState extends State<AutomationsPage> {
       case 'humidity': return 'Umiditate';
       case 'luminosity': return 'Luminozitate';
       case 'motion': return 'Mișcare';
+      case 'sunrise': return 'Răsărit';
+      case 'sunset': return 'Apus';
+      case 'time': return 'Oră Fixă';
+      case 'ir': return 'Telecomandă IR';
       default: return code;
     }
   }
@@ -1805,6 +1899,10 @@ class _AutomationsPageState extends State<AutomationsPage> {
       case 'humidity': return Icons.water_drop_rounded;
       case 'luminosity': return Icons.wb_sunny_rounded;
       case 'motion': return Icons.directions_walk_rounded;
+      case 'sunrise': return Icons.wb_twilight_rounded;
+      case 'sunset': return Icons.nights_stay_rounded;
+      case 'time': return Icons.access_time_rounded;
+      case 'ir': return Icons.settings_remote_rounded;
       default: return Icons.sensors_rounded;
     }
   }
@@ -1815,20 +1913,31 @@ class _AutomationsPageState extends State<AutomationsPage> {
       case 'humidity': return Colors.blue;
       case 'luminosity': return Colors.amber;
       case 'motion': return Colors.teal;
+      case 'sunrise': return Colors.orangeAccent;
+      case 'sunset': return Colors.deepPurple;
+      case 'time': return Colors.indigo;
+      case 'ir': return Colors.red;
       default: return Colors.grey;
     }
   }
 
   String _getDeviceName(String code) {
+    if (code.trim().startsWith('[')) {
+      try {
+        final actions = jsonDecode(code) as List;
+        return actions.map((a) => _getDeviceName(a['device'] ?? '')).join(' + ');
+      } catch (_) {}
+    }
     switch (code) {
-      case 'bulb': return 'Bec Philips WiZ';
+      case 'bulb': return 'Bec WiZ';
       case 'plug': return 'Priză S60';
-      case 'thr': return 'Switch Sonoff THR';
+      case 'thr': return 'Switch THR';
       default: return code;
     }
   }
 
   IconData _getDeviceIcon(String code) {
+    if (code.trim().startsWith('[')) return Icons.device_hub_rounded;
     switch (code) {
       case 'bulb': return Icons.lightbulb_outline_rounded;
       case 'plug': return Icons.power_rounded;
@@ -1838,6 +1947,7 @@ class _AutomationsPageState extends State<AutomationsPage> {
   }
 
   Color _getDeviceColor(String code) {
+    if (code.trim().startsWith('[')) return Colors.deepPurple;
     switch (code) {
       case 'bulb': return Colors.orange;
       case 'plug': return Colors.green;
@@ -1850,11 +1960,51 @@ class _AutomationsPageState extends State<AutomationsPage> {
     final sensor = _getSensorName(rule['sensor']);
     final op = rule['operator'];
     final thresh = rule['threshold'];
-    final device = _getDeviceName(rule['target_device']);
-    final state = rule['target_state'] == 'ON' ? 'PORNIT' : 'OPRIT';
+    final targetDevice = rule['target_device'] as String? ?? '';
+    final targetState = rule['target_state'] as String? ?? '';
+
+    // Formatăm descrierea acțiunii (single sau multi)
+    String actionText;
+    if (targetDevice.trim().startsWith('[')) {
+      try {
+        final actions = jsonDecode(targetDevice) as List;
+        final parts = actions.map((a) {
+          final devName = _getDeviceName(a['device'] ?? '');
+          final st = (a['state'] as String? ?? 'ON') == 'ON' ? 'PORNIT' : 'OPRIT';
+          return '$devName pe $st';
+        }).join(', ');
+        actionText = 'comută $parts';
+      } catch (_) {
+        actionText = 'comută dispozitivele';
+      }
+    } else {
+      final device = _getDeviceName(targetDevice);
+      final state = targetState == 'ON' ? 'PORNIT' : 'OPRIT';
+      actionText = 'comută $device pe $state';
+    }
 
     if (rule['sensor'] == 'motion') {
-      return 'Dacă se detectează mișcare 🏃, atunci comută $device pe $state.';
+      return 'Dacă se detectează mișcare 🏃, atunci $actionText.';
+    } else if (rule['sensor'] == 'ir') {
+      return 'La apăsarea butonului IR 📡 (cod: $op), atunci $actionText.';
+    } else if (rule['sensor'] == 'sunrise' || rule['sensor'] == 'sunset') {
+      final sunEvent = rule['sensor'] == 'sunrise' ? 'răsărit' : 'apus';
+      final threshVal = (thresh as num).toDouble();
+      String timeOffset = '';
+      if (threshVal == 0.0) {
+        timeOffset = 'exact la $sunEvent';
+      } else if (threshVal < 0) {
+        timeOffset = 'cu ${(threshVal.abs()).toInt()} minute înainte de $sunEvent';
+      } else {
+        timeOffset = 'cu ${threshVal.toInt()} minute după $sunEvent';
+      }
+      return 'Dacă este $timeOffset ⏰, atunci $actionText.';
+    } else if (rule['sensor'] == 'time') {
+      final totalMinutes = (thresh as num).toInt();
+      final hour = (totalMinutes / 60).floor();
+      final minute = totalMinutes % 60;
+      final timeStr = "${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+      return 'Dacă este ora $timeStr ⏰, atunci $actionText.';
     } else {
       String unit = '';
       if (rule['sensor'] == 'temperature') unit = '°C';
@@ -1868,7 +2018,7 @@ class _AutomationsPageState extends State<AutomationsPage> {
       if (op == '<=') opText = 'este mai mic sau egal cu';
       if (op == '>=') opText = 'este mai mare sau egal cu';
 
-      return 'Dacă $sensor $opText ${thresh.toStringAsFixed(1)}$unit, atunci comută $device pe $state.';
+      return 'Dacă $sensor $opText ${(thresh as num).toStringAsFixed(1)}$unit, atunci $actionText.';
     }
   }
 
@@ -2157,7 +2307,8 @@ class _AutomationsPageState extends State<AutomationsPage> {
 }
 
 class AddRuleBottomSheet extends StatefulWidget {
-  const AddRuleBottomSheet({super.key});
+  final MqttServiceV2 mqttService;
+  const AddRuleBottomSheet({super.key, required this.mqttService});
 
   @override
   State<AddRuleBottomSheet> createState() => _AddRuleBottomSheetState();
@@ -2170,8 +2321,21 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
   String _selectedSensor = 'temperature';
   String _selectedOperator = '>';
   double _threshold = 25.0;
-  String _selectedDevice = 'bulb';
-  String _selectedState = 'ON';
+
+  // Oră implicită pentru regula la oră fixă
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 12, minute: 0);
+
+  // Multi-device selector: starea fiecărui dispozitiv
+  // null = neinclusă, 'ON' = pornit, 'OFF' = oprit
+  final Map<String, String?> _deviceStates = {
+    'bulb': null,
+    'plug': null,
+    'thr': null,
+  };
+
+  // Codul IR capturat
+  String _capturedIrCode = '';
+  bool _isCapturingIr = false;
 
   // Opțiuni dropdown
   final List<Map<String, String>> _sensors = [
@@ -2179,6 +2343,10 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
     {'value': 'humidity', 'label': 'Umiditate (%)'},
     {'value': 'luminosity', 'label': 'Luminozitate (lux)'},
     {'value': 'motion', 'label': 'Senzor Mișcare (Radar)'},
+    {'value': 'ir', 'label': 'Telecomandă IR 📡'},
+    {'value': 'sunrise', 'label': 'La Răsărit (Sunrise)'},
+    {'value': 'sunset', 'label': 'La Apus (Sunset)'},
+    {'value': 'time', 'label': 'La Oră Fixă (Time)'},
   ];
 
   final List<Map<String, String>> _operators = [
@@ -2187,21 +2355,150 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
     {'value': '==', 'label': 'Egal cu (==)'},
   ];
 
-  final List<Map<String, String>> _devices = [
-    {'value': 'bulb', 'label': 'Bec Philips WiZ'},
-    {'value': 'plug', 'label': 'Priză Smart S60'},
-    {'value': 'thr', 'label': 'Switch Sonoff THR'},
-  ];
-
-  final List<Map<String, String>> _states = [
-    {'value': 'ON', 'label': 'Pornit (ON)'},
-    {'value': 'OFF', 'label': 'Oprit (OFF)'},
-  ];
-
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  /// Numele afișat pentru un dispozitiv
+  String _devLabel(String key) {
+    switch (key) {
+      case 'bulb': return 'Bec Philips WiZ';
+      case 'plug': return 'Priză Smart S60';
+      case 'thr': return 'Switch Sonoff THR';
+      default: return key;
+    }
+  }
+
+  IconData _devIcon(String key) {
+    switch (key) {
+      case 'bulb': return Icons.lightbulb_outline_rounded;
+      case 'plug': return Icons.power_rounded;
+      case 'thr': return Icons.settings_input_component_rounded;
+      default: return Icons.device_unknown_rounded;
+    }
+  }
+
+  Color _devColor(String key) {
+    switch (key) {
+      case 'bulb': return Colors.orange;
+      case 'plug': return Colors.green;
+      case 'thr': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  /// Deschide un dialog de captură IR și ascultă pe smarthome/wemos/ir/raw
+  /// Folosim un ValueNotifier + StreamSubscription explicit pentru a evita re-subscriberea la rebuild.
+  Future<void> _captureIrCode() async {
+    setState(() {
+      _isCapturingIr = true;
+      _capturedIrCode = '';
+    });
+
+    final codeNotifier = ValueNotifier<String?>(null);
+    // Capturi locale pentru a evita use_build_context_synchronously
+    final overlayContext = context;
+
+    late final StreamSubscription<Map<String, dynamic>> sub;
+    sub = widget.mqttService.messageStream
+        .where((msg) => msg['topic'] == 'smarthome/wemos/ir')
+        .listen((msg) {
+      final code = msg['payload'] as String?;
+      if (code != null && code.isNotEmpty) {
+        codeNotifier.value = code;
+        sub.cancel();
+        // Inchidem dialogul dupa 700ms, folosind Navigator cu rootNavigator pe overlayContext
+        Future.delayed(const Duration(milliseconds: 700), () {
+          if (overlayContext.mounted) {
+            // ignore: use_build_context_synchronously
+            Navigator.of(overlayContext, rootNavigator: true).maybePop();
+          }
+        });
+      }
+    });
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return ValueListenableBuilder<String?>(
+          valueListenable: codeNotifier,
+          builder: (ctx2, code, _) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Icon(Icons.settings_remote_rounded, color: Colors.red[700]),
+                  const SizedBox(width: 10),
+                  const Text('Captură IR', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (code == null) ...[
+                    const SizedBox(
+                      width: 60, height: 60,
+                      child: CircularProgressIndicator(strokeWidth: 3, color: Colors.red),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Apasă un buton de pe telecomandă...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ] else ...[
+                    Icon(Icons.check_circle_rounded, color: Colors.green[600], size: 60),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Cod capturat!',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        code,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black87),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    sub.cancel();
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Anulează'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // Curățăm subscrierea dacă dialogul a fost închis înainte de captură
+    sub.cancel();
+    final captured = codeNotifier.value; // citim ÎNAINTE de dispose
+    codeNotifier.dispose();
+
+    setState(() {
+      _isCapturingIr = false;
+      if (captured != null && captured.isNotEmpty) {
+        _capturedIrCode = captured;
+        _selectedOperator = captured;
+      }
+    });
   }
 
   @override
@@ -2233,9 +2530,28 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
       sliderLabel = '${_threshold.toInt()} lx';
       if (_threshold > sliderMax) _threshold = sliderMax;
       if (_threshold < sliderMin) _threshold = sliderMin;
+    } else if (_selectedSensor == 'sunrise' || _selectedSensor == 'sunset') {
+      sliderMin = -120.0;
+      sliderMax = 120.0;
+      sliderDivisions = 48; // pași de 5 minute
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+      if (_threshold == 0.0) {
+        sliderLabel = 'Exact la ${_selectedSensor == 'sunrise' ? 'răsărit' : 'apus'}';
+      } else if (_threshold < 0) {
+        sliderLabel = 'Cu ${(_threshold.abs()).toInt()} min înainte';
+      } else {
+        sliderLabel = 'Cu ${_threshold.toInt()} min după';
+      }
     }
 
     final isMotion = _selectedSensor == 'motion';
+    final isIr = _selectedSensor == 'ir';
+    final isTimeOrSun = _selectedSensor == 'sunrise' || _selectedSensor == 'sunset' || _selectedSensor == 'time';
+    final isTriggerOnly = isMotion || isIr; // sensori fără prag numeric
+
+    // Numărul de dispozitive activate
+    final activeDevices = _deviceStates.values.where((v) => v != null).length;
 
     return Container(
       padding: EdgeInsets.only(
@@ -2287,7 +2603,7 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                 controller: _nameController,
                 decoration: InputDecoration(
                   labelText: "Nume Regulă (opțional)",
-                  hintText: "ex: Oprește căldura dacă e cald",
+                  hintText: "ex: Pornește lumina la apus",
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
@@ -2299,11 +2615,11 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
               ),
               const SizedBox(height: 20),
 
-              // Dropdown Senzor Sursă
+              // 1. Senzor sursă
               DropdownButtonFormField<String>(
                 value: _selectedSensor,
                 decoration: InputDecoration(
-                  labelText: "1. Senzor Sursă",
+                  labelText: "1. Senzor Sursă / Declanșator",
                   filled: true,
                   fillColor: Colors.white,
                   border: OutlineInputBorder(
@@ -2322,6 +2638,17 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                       if (val == 'motion') {
                         _selectedOperator = 'motion_detected';
                         _threshold = 0.0;
+                      } else if (val == 'ir') {
+                        _selectedOperator = '';
+                        _capturedIrCode = '';
+                        _threshold = 0.0;
+                      } else if (val == 'sunrise' || val == 'sunset') {
+                        _selectedOperator = 'at';
+                        _threshold = 0.0;
+                      } else if (val == 'time') {
+                        _selectedOperator = 'at';
+                        _threshold = 720.0;
+                        _selectedTime = const TimeOfDay(hour: 12, minute: 0);
                       } else {
                         _selectedOperator = '>';
                         _threshold = val == 'temperature' ? 25.0 : val == 'humidity' ? 50.0 : 100.0;
@@ -2332,8 +2659,57 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
               ),
               const SizedBox(height: 20),
 
-              if (!isMotion) ...[
-                // Dropdown Operator Condiție (doar dacă nu este mișcare)
+              // Captură IR
+              if (isIr) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(
+                      color: _capturedIrCode.isNotEmpty ? Colors.green : Colors.red.withOpacity(0.3),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    leading: Icon(
+                      _capturedIrCode.isNotEmpty ? Icons.check_circle_rounded : Icons.settings_remote_rounded,
+                      color: _capturedIrCode.isNotEmpty ? Colors.green : Colors.red[700],
+                      size: 30,
+                    ),
+                    title: Text(
+                      _capturedIrCode.isNotEmpty ? 'Cod IR Capturat' : 'Niciun cod captat',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: _capturedIrCode.isNotEmpty ? Colors.green[800] : Colors.red[800],
+                      ),
+                    ),
+                    subtitle: _capturedIrCode.isNotEmpty
+                        ? Text(
+                            _capturedIrCode,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.black54),
+                          )
+                        : const Text('Apasă butonul pentru a scana telecomanda',
+                            style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    trailing: ElevatedButton.icon(
+                      icon: const Icon(Icons.radar_rounded, size: 18),
+                      label: const Text('Scanează'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[700],
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _isCapturingIr ? null : _captureIrCode,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Operator + slider pentru senzori numerici
+              if (!isTriggerOnly && !isTimeOrSun) ...[
                 DropdownButtonFormField<String>(
                   value: _selectedOperator,
                   decoration: InputDecoration(
@@ -2357,7 +2733,6 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                 ),
                 const SizedBox(height: 20),
 
-                // Slider pentru Prag
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                   decoration: BoxDecoration(
@@ -2393,76 +2768,279 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
+              ] else if (isTimeOrSun) ...[
+                if (_selectedSensor == 'time') ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                      leading: const Icon(Icons.access_time_rounded, color: Colors.indigo, size: 28),
+                      title: const Text("Selectează Ora Fixă", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      subtitle: Text(
+                        "${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}",
+                        style: const TextStyle(fontSize: 18, color: Colors.indigo, fontWeight: FontWeight.bold),
+                      ),
+                      trailing: const Icon(Icons.keyboard_arrow_right_rounded, color: Colors.grey),
+                      onTap: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _selectedTime,
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedTime = picked;
+                            _threshold = (picked.hour * 60 + picked.minute).toDouble();
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Decalaj Timp (Offset)",
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                            ),
+                            Text(
+                              sliderLabel,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.indigo),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: _threshold,
+                          min: sliderMin,
+                          max: sliderMax,
+                          divisions: sliderDivisions,
+                          label: sliderLabel,
+                          activeColor: Colors.indigo,
+                          onChanged: (v) => setState(() => _threshold = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
               ],
 
-              // Dropdown Dispozitiv Țintă
-              DropdownButtonFormField<String>(
-                value: _selectedDevice,
-                decoration: InputDecoration(
-                  labelText: isMotion ? "2. Controlează Dispozitivul" : "3. Controlează Dispozitivul",
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: const Icon(Icons.devices_other_rounded),
+              // ===== MULTI-DEVICE SELECTOR =====
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  border: activeDevices == 0
+                      ? Border.all(color: Colors.red.withOpacity(0.3), width: 1.5)
+                      : null,
                 ),
-                items: _devices
-                    .map((d) => DropdownMenuItem(value: d['value'], child: Text(d['label']!)))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedDevice = val);
-                  }
-                },
-              ),
-              const SizedBox(height: 20),
-
-              // Dropdown Stare Dispozitiv
-              DropdownButtonFormField<String>(
-                value: _selectedState,
-                decoration: InputDecoration(
-                  labelText: isMotion ? "3. Stare Dorită" : "4. Stare Dorită",
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: const Icon(Icons.power_settings_new_rounded),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.device_hub_rounded, size: 18, color: Colors.indigo[700]),
+                        const SizedBox(width: 8),
+                        Text(
+                          isTriggerOnly
+                              ? '2. Dispozitive de Controlat'
+                              : isTimeOrSun ? '2. Dispozitive de Controlat' : '3. Dispozitive de Controlat',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo[800]),
+                        ),
+                        const Spacer(),
+                        if (activeDevices > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo[50],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$activeDevices activ${activeDevices == 1 ? '' : 'e'}',
+                              style: TextStyle(fontSize: 11, color: Colors.indigo[700], fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (activeDevices == 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Selectează cel puțin un dispozitiv',
+                          style: TextStyle(fontSize: 11, color: Colors.red[400]),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    ..._deviceStates.entries.map((entry) {
+                      final key = entry.key;
+                      final state = entry.value;
+                      final isActive = state != null;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isActive ? _devColor(key).withOpacity(0.08) : Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isActive ? _devColor(key).withOpacity(0.4) : Colors.grey[200]!,
+                              width: isActive ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(_devIcon(key), color: isActive ? _devColor(key) : Colors.grey[400], size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _devLabel(key),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: isActive ? Colors.black87 : Colors.grey[500],
+                                  ),
+                                ),
+                              ),
+                              // Toggle ON/OFF - apare doar dacă dispozitivul e inclus
+                              if (isActive) ...[
+                                GestureDetector(
+                                  onTap: () => setState(() => _deviceStates[key] = state == 'ON' ? 'OFF' : 'ON'),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: state == 'ON' ? Colors.green[50] : Colors.red[50],
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: state == 'ON' ? Colors.green : Colors.red,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      state == 'ON' ? 'ON' : 'OFF',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: state == 'ON' ? Colors.green[700] : Colors.red[700],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              // Checkbox include/exclude
+                              Checkbox(
+                                value: isActive,
+                                activeColor: _devColor(key),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                onChanged: (checked) {
+                                  setState(() {
+                                    _deviceStates[key] = checked == true ? 'ON' : null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
                 ),
-                items: _states
-                    .map((st) => DropdownMenuItem(value: st['value'], child: Text(st['label']!)))
-                    .toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedState = val);
-                  }
-                },
               ),
               const SizedBox(height: 35),
 
-              // Buton de Salvare
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
                   onPressed: () {
+                    // Validăm: cel puțin un dispozitiv selectat
+                    if (activeDevices == 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Selectează cel puțin un dispozitiv!'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+                    // Validăm: cod IR capturat
+                    if (_selectedSensor == 'ir' && _capturedIrCode.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Scanează un cod IR înainte de a salva!'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
                     if (_formKey.currentState!.validate()) {
                       String finalName = _nameController.text.trim();
                       if (finalName.isEmpty) {
-                        finalName = "Regulă ${_selectedSensor == 'motion' ? 'Mișcare' : _selectedSensor == 'temperature' ? 'Climă' : _selectedSensor == 'humidity' ? 'Umiditate' : 'Lumină'}";
+                        if (_selectedSensor == 'motion') {
+                          finalName = 'Regulă Mișcare';
+                        } else if (_selectedSensor == 'ir') {
+                          finalName = 'Regulă Telecomandă IR';
+                        } else if (_selectedSensor == 'temperature') {
+                          finalName = 'Regulă Climă';
+                        } else if (_selectedSensor == 'humidity') {
+                          finalName = 'Regulă Umiditate';
+                        } else if (_selectedSensor == 'luminosity') {
+                          finalName = 'Regulă Lumină';
+                        } else if (_selectedSensor == 'sunrise') {
+                          finalName = 'Regulă Răsărit';
+                        } else if (_selectedSensor == 'sunset') {
+                          finalName = 'Regulă Apus';
+                        } else if (_selectedSensor == 'time') {
+                          finalName = 'Regulă Oră Fixă';
+                        } else {
+                          finalName = 'Regulă Personalizată';
+                        }
                       }
-                      
+
+                      // Construim target_device și target_state
+                      final activeEntries = _deviceStates.entries
+                          .where((e) => e.value != null)
+                          .toList();
+
+                      String finalDevice;
+                      String finalState;
+
+                      if (activeEntries.length == 1) {
+                        // Single-action clasic
+                        finalDevice = activeEntries.first.key;
+                        finalState = activeEntries.first.value!;
+                      } else {
+                        // Multi-action: serializăm ca JSON array
+                        final actions = activeEntries
+                            .map((e) => {'device': e.key, 'state': e.value!})
+                            .toList();
+                        finalDevice = jsonEncode(actions);
+                        finalState = 'MULTIPLE';
+                      }
+
                       final rule = {
-                        "name": finalName,
-                        "sensor": _selectedSensor,
-                        "operator": _selectedOperator,
-                        "threshold": _threshold,
-                        "target_device": _selectedDevice,
-                        "target_state": _selectedState,
-                        "is_active": 1
+                        'name': finalName,
+                        'sensor': _selectedSensor,
+                        'operator': _selectedSensor == 'ir' ? _capturedIrCode : _selectedOperator,
+                        'threshold': _threshold,
+                        'target_device': finalDevice,
+                        'target_state': finalState,
+                        'is_active': 1,
                       };
                       Navigator.pop(context, rule);
                     }
@@ -2473,7 +3051,7 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                     elevation: 5,
                   ),
-                  child: const Text("SALVEAZĂ REGULA", style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text('SALVEAZĂ REGULA', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(height: 10),
