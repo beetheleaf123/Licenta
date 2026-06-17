@@ -30,4 +30,38 @@ class ApiServiceV2 {
       rethrow; // Repropagam eroarea catre cel care apeleaza metoda
     }
   }
+
+  /// Totaluri energie: azi, luna, putere instantă, arhivă zile
+  Future<Map<String, dynamic>> fetchEnergie() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/energie'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Eroare server energie: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[API_SERVICE] Eroare la fetchEnergie: $e');
+      rethrow;
+    }
+  }
+
+  /// Ultimele 100 sample-uri putere instantă (pentru grafic)
+  Future<List<dynamic>> fetchEnergieIstoric() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/energie/istoric'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      } else {
+        throw Exception('Eroare server energie/istoric: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[API_SERVICE] Eroare la fetchEnergieIstoric: $e');
+      rethrow;
+    }
+  }
 }

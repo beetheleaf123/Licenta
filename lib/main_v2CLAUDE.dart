@@ -53,6 +53,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
   double putereW = 0.0;
   double voltajV = 0.0;
   double curentA = 0.0;
+  double energyTodayWh = 0.0;   // Energie consumată azi (Wh)
+  double energyMonthWh = 0.0;   // Energie consumată luna aceasta (Wh)
+  double costAziLei = 0.0;      // Cost estimat azi (lei)
+  double costLunaLei = 0.0;     // Cost estimat lunar (lei)
 
   // --- TIMESTAMPS PENTRU MONITORIZARE REALA ---
   DateTime? lastBmeUpdate;
@@ -61,6 +65,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
   DateTime? lastBulbUpdate;
   DateTime? lastThrUpdate; // NOU: Timestamp THR
   Timer? _statusTimer;
+  Timer? _energyTimer;   // Refresh periodic energie din Flask
 
   List<FlSpot> puncteGrafic = [];
   List<FlSpot> puncteUmiditate = [];
@@ -94,6 +99,10 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     _listenToStreams();
     _mqttService.connect();
     _loadHistory();
+    _loadEnergie(); // Fetch energie din Flask la startup
+
+    // Timer pentru refresh periodic energie (la fiecare 30s)
+    _energyTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadEnergie());
 
     // Timer pentru refresh periodic al UI-ului (pentru a detecta timeout-ul senzorilor)
     _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
@@ -163,6 +172,13 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
           voltajV = (data['voltage'] as num).toDouble();
           curentA = (data['current'] as num).toDouble();
           if (data['switch'] != null) plugStatus = data['switch'].toString().toUpperCase();
+          // Energie acumulată: actualizăm din payload MQTT (real-time, fără HTTP)
+          if (data['energy_today_wh'] != null) {
+            energyTodayWh = (data['energy_today_wh'] as num).toDouble();
+          }
+          if (data['energy_month_wh'] != null) {
+            energyMonthWh = (data['energy_month_wh'] as num).toDouble();
+          }
           lastPlugUpdate = DateTime.now(); // Update timestamp
         } 
         else if (topic == 'smarthome/bulb/state') {
@@ -256,9 +272,31 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     }
   }
 
+  /// Fetch energie totală din Flask (fallback / refresh periodic)
+  Future<void> _loadEnergie() async {
+    try {
+      final data = await _apiService.fetchEnergie();
+      if (!mounted) return;
+      setState(() {
+        energyTodayWh  = (data['today_wh']       as num?)?.toDouble() ?? energyTodayWh;
+        energyMonthWh  = (data['month_wh']        as num?)?.toDouble() ?? energyMonthWh;
+        costAziLei     = (data['cost_today_lei']  as num?)?.toDouble() ?? 0.0;
+        costLunaLei    = (data['cost_month_lei']  as num?)?.toDouble() ?? 0.0;
+        // Dacă MQTT n-a actualizat puterea instantă, luăm din Flask
+        if (putereW == 0.0 && data['instant_w'] != null) {
+          putereW = (data['instant_w'] as num).toDouble();
+        }
+      });
+    } catch (e) {
+      // Flask offline — păstrăm valorile MQTT existente, nu dăm eroare
+      print('[ENERGIE] Flask offline, se folosesc valorile MQTT: $e');
+    }
+  }
+
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _energyTimer?.cancel();
     _mqttService.dispose();
     super.dispose();
   }
@@ -567,6 +605,14 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
   }
 
   Widget _buildPlugCard() {
+    // Formatare valori energie
+    final String todayDisplay = energyTodayWh >= 1000
+        ? '${(energyTodayWh / 1000).toStringAsFixed(3)} kWh'
+        : '${energyTodayWh.toStringAsFixed(1)} Wh';
+    final String monthDisplay = energyMonthWh >= 1000
+        ? '${(energyMonthWh / 1000).toStringAsFixed(2)} kWh'
+        : '${energyMonthWh.toStringAsFixed(0)} Wh';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -596,6 +642,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
             ],
           ),
           const Divider(height: 40, color: Color(0xFFF0F0F0)),
+          // --- Rând 1: Putere instantă, Tensiune, Curent ---
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -604,8 +651,56 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
               EnergyStatItem("Current", "${curentA.toStringAsFixed(2)}A", Icons.speed_rounded, Colors.teal),
             ],
           ),
+          const SizedBox(height: 20),
+          // --- Rând 2: Energie azi, Luna, Cost ---
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F6FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE8E0FF), width: 1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildEnergyCell(
+                  Icons.today_rounded, 
+                  'Azi', 
+                  todayDisplay, 
+                  const Color(0xFF7C3AED),
+                ),
+                Container(width: 1, height: 40, color: const Color(0xFFE0D7FF)),
+                _buildEnergyCell(
+                  Icons.calendar_month_rounded, 
+                  'Luna', 
+                  monthDisplay, 
+                  const Color(0xFF0EA5E9),
+                ),
+                Container(width: 1, height: 40, color: const Color(0xFFE0D7FF)),
+                _buildEnergyCell(
+                  Icons.receipt_long_rounded, 
+                  'Cost/zi', 
+                  '${costAziLei.toStringAsFixed(3)} lei', 
+                  const Color(0xFF059669),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEnergyCell(IconData icon, String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+      ],
     );
   }
 
