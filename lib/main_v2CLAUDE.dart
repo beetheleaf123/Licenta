@@ -2047,66 +2047,6 @@ class _AutomationsPageState extends State<AutomationsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- AUTOMATIZARE LUMINI (LEGACY) ---
-              const Text(
-                "Setări Globale",
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.blueGrey, letterSpacing: 1.5),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                              child: const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 24),
-                            ),
-                            const SizedBox(width: 15),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Auto-Light Threshold", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2D3142))),
-                                Text("Prag implicit pentru Wemos", style: TextStyle(fontSize: 11, color: Colors.grey)),
-                              ],
-                            ),
-                          ],
-                        ),
-                        Text("${_luxThreshold.toInt()} lx", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Slider(
-                      value: _luxThreshold,
-                      min: 0,
-                      max: 500,
-                      divisions: 50,
-                      label: "${_luxThreshold.toInt()} lx",
-                      activeColor: Colors.indigo[900],
-                      onChanged: (val) {
-                        setState(() => _luxThreshold = val);
-                        widget.onThresholdChanged(val);
-                      },
-                      onChangeEnd: (val) {
-                        widget.mqttService.publish("smarthome/settings/update", val.toInt().toString());
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 30),
-
               // --- REGULI CONDITIONALE ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
