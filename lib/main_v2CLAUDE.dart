@@ -652,40 +652,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
             ],
           ),
           const SizedBox(height: 20),
-          // --- Rând 2: Energie azi, Luna, Cost ---
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F6FF),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE8E0FF), width: 1),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildEnergyCell(
-                  Icons.today_rounded, 
-                  'Azi', 
-                  todayDisplay, 
-                  const Color(0xFF7C3AED),
-                ),
-                Container(width: 1, height: 40, color: const Color(0xFFE0D7FF)),
-                _buildEnergyCell(
-                  Icons.calendar_month_rounded, 
-                  'Luna', 
-                  monthDisplay, 
-                  const Color(0xFF0EA5E9),
-                ),
-                Container(width: 1, height: 40, color: const Color(0xFFE0D7FF)),
-                _buildEnergyCell(
-                  Icons.receipt_long_rounded, 
-                  'Cost/zi', 
-                  '${costAziLei.toStringAsFixed(3)} lei', 
-                  const Color(0xFF059669),
-                ),
-              ],
-            ),
-          ),
+          // --- Rând 2: Energie azi, Luna, Cost ---  MUTAT ÎN ANALYTICS
         ],
       ),
     );
@@ -711,6 +678,13 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
         MaterialPageRoute(builder: (context) => IstoricDetaliatScreenV2(
           tempPoints: puncteGrafic,
           humidityPoints: puncteUmiditate,
+          energyTodayWh: energyTodayWh,
+          energyMonthWh: energyMonthWh,
+          costAziLei: costAziLei,
+          costLunaLei: costLunaLei,
+          putereW: putereW,
+          voltajV: voltajV,
+          curentA: curentA,
         ))
       ),
       child: Container(
@@ -1534,11 +1508,26 @@ class EnergyStatItem extends StatelessWidget {
 class IstoricDetaliatScreenV2 extends StatelessWidget {
   final List<FlSpot> tempPoints;
   final List<FlSpot> humidityPoints;
+  // Date energie
+  final double energyTodayWh;
+  final double energyMonthWh;
+  final double costAziLei;
+  final double costLunaLei;
+  final double putereW;
+  final double voltajV;
+  final double curentA;
   
   const IstoricDetaliatScreenV2({
     super.key, 
     required this.tempPoints,
     required this.humidityPoints,
+    this.energyTodayWh = 0.0,
+    this.energyMonthWh = 0.0,
+    this.costAziLei = 0.0,
+    this.costLunaLei = 0.0,
+    this.putereW = 0.0,
+    this.voltajV = 0.0,
+    this.curentA = 0.0,
   });
 
   @override
@@ -1565,10 +1554,13 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
                 _buildSummary(),
                 const SizedBox(height: 30),
                 const SectionTitle("TEMPERATURE PROFILE"),
-                _buildChart(tempPoints, const Color(0xFF1A237E), "°C", 4.0), // minDelta 4°C
+                _buildChart(tempPoints, const Color(0xFF1A237E), "°C", 4.0),
                 const SizedBox(height: 30),
                 const SectionTitle("HUMIDITY PROFILE"),
-                _buildChart(humidityPoints, const Color(0xFF0288D1), "%", 10.0), // minDelta 10%
+                _buildChart(humidityPoints, const Color(0xFF0288D1), "%", 10.0),
+                const SizedBox(height: 30),
+                const SectionTitle("ENERGY PROFILE — S60"),
+                _buildEnergySection(),
                 const SizedBox(height: 30),
                 const SectionTitle("EVENT HISTORY (LAST 5 CHECKPOINTS)"),
                 _buildLog(),
@@ -1610,6 +1602,73 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
       const SizedBox(width: 12),
       Expanded(child: _statCard("DATAPOINTS", "${tempPoints.length}", Colors.grey[800]!)),
     ]);
+  }
+
+  Widget _buildEnergySection() {
+    final String todayDisplay = energyTodayWh >= 1000
+        ? '${(energyTodayWh / 1000).toStringAsFixed(3)} kWh'
+        : '${energyTodayWh.toStringAsFixed(1)} Wh';
+    final String monthDisplay = energyMonthWh >= 1000
+        ? '${(energyMonthWh / 1000).toStringAsFixed(2)} kWh'
+        : '${energyMonthWh.toStringAsFixed(0)} Wh';
+
+    return Column(
+      children: [
+        // Rând 1: Putere instantă, Tensiune, Curent
+        Row(
+          children: [
+            Expanded(child: _statCard("POWER", "${putereW.toStringAsFixed(1)} W", const Color(0xFF7C3AED))),
+            const SizedBox(width: 12),
+            Expanded(child: _statCard("VOLTAGE", "${voltajV.toInt()} V", const Color(0xFF0EA5E9))),
+            const SizedBox(width: 12),
+            Expanded(child: _statCard("CURRENT", "${curentA.toStringAsFixed(2)} A", const Color(0xFF059669))),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Rând 2: Energie azi, luna, cost
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4C1D95), Color(0xFF1E40AF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4C1D95).withOpacity(0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              )
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _energyCell(Icons.today_rounded, 'Azi', todayDisplay, Colors.white),
+              Container(width: 1, height: 40, color: Colors.white24),
+              _energyCell(Icons.calendar_month_rounded, 'Luna', monthDisplay, Colors.white),
+              Container(width: 1, height: 40, color: Colors.white24),
+              _energyCell(Icons.receipt_long_rounded, 'Cost/zi', '${costAziLei.toStringAsFixed(3)} lei', Colors.greenAccent),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _energyCell(IconData icon, String label, String value, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color.withOpacity(0.85)),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 10, color: color.withOpacity(0.7), fontWeight: FontWeight.w500)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+      ],
+    );
   }
 
   Widget _statCard(String label, String val, Color col) {
@@ -2377,6 +2436,8 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
     {'value': 'temperature', 'label': 'Temperatură (°C)'},
     {'value': 'humidity', 'label': 'Umiditate (%)'},
     {'value': 'luminosity', 'label': 'Luminozitate (lux)'},
+    {'value': 'power', 'label': 'Putere Instantă (W) ⚡'},
+    {'value': 'voltage', 'label': 'Tensiune (V) 🔌'},
     {'value': 'motion', 'label': 'Senzor Mișcare (Radar)'},
     {'value': 'ir', 'label': 'Telecomandă IR 📡'},
     {'value': 'sunrise', 'label': 'La Răsărit (Sunrise)'},
