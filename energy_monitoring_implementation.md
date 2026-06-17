@@ -65,9 +65,10 @@ S-au adăugat metode pentru interogarea endpoint-urilor Flask:
 
 ### B. UI & Analytics (`lib/main_v2CLAUDE.dart`)
 1. **Curățare Dashboard:** Rândul cu consumurile cumulate (Azi/Lună/Cost) a fost scos din cardul prizei de pe ecranul principal pentru a păstra designul aerisit. Acum cardul prizei afișează doar parametrii instantanei: Putere (W), Tensiune (V) și Curent (A).
-2. **Mutare în Analytics:** Datele cumulative de consum au fost mutate în ecranul de detalii `IstoricDetaliatScreenV2` sub secțiunea **ENERGY PROFILE — S60**. Acesta afișează:
-   * 3 carduri cu parametrii instantanei.
-   * Un card principal cu gradient pentru energia consumată azi (Wh/kWh), energia pe luna curentă și costul estimat în Lei.
+2. **Mutare în Analytics & Grafic de Putere:** Datele cumulative de consum au fost mutate în ecranul de detalii `IstoricDetaliatScreenV2` sub secțiunea **ENERGY PROFILE — S60**. Ecranul a fost completat cu un **grafic de putere (W)** real-time și istoric, similar cu profilele de climă:
+   * 3 carduri cu parametrii instantanei (Power, Voltage, Current).
+   * Un card principal cu gradient pentru energia consumată azi, luna aceasta și cost.
+   * Un grafic dinamic bazat pe `LineChart` (`fl_chart`) care afișează evoluția consumului instantaneu în Wați, folosind eșantioanele istorice primite de la `fetchEnergieIstoric()` la deschidere și actualizările în timp real primite prin MQTT.
 3. **Automatizări pe bază de W și V:**
    * În drop-down-ul de creare reguli (`_AddRuleBottomSheetState`) au fost adăugate două opțiuni de senzori: `Putere Instantă (W) ⚡` și `Tensiune (V) 🔌`.
 4. **Corecție control slider la tastare (TextFormField):**

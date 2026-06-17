@@ -69,6 +69,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
 
   List<FlSpot> puncteGrafic = [];
   List<FlSpot> puncteUmiditate = [];
+  List<FlSpot> punctePutere = []; // NOU: Grafic putere
   bool seIncarcaGraficul = true;
 
   // --- NOU: LISTA CODURI IR ---
@@ -180,6 +181,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
             energyMonthWh = (data['energy_month_wh'] as num).toDouble();
           }
           lastPlugUpdate = DateTime.now(); // Update timestamp
+          _updateLivePowerChart(putereW); // NOU: Update live power chart
         } 
         else if (topic == 'smarthome/bulb/state') {
           bulbStatus = message.toUpperCase();
@@ -253,9 +255,24 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
     }
   }
 
+  void _updateLivePowerChart(double w) {
+    punctePutere.add(FlSpot(punctePutere.length.toDouble(), w));
+    if (punctePutere.length > 50) {
+      punctePutere.removeAt(0);
+      punctePutere = punctePutere.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.y)).toList();
+    }
+  }
+
   Future<void> _loadHistory() async {
     try {
       final data = await _apiService.fetchHistory();
+      List<dynamic> energyData = [];
+      try {
+        energyData = await _apiService.fetchEnergieIstoric();
+      } catch (err) {
+        print('[UI_ERROR] Eroare incarcare istoric energie: $err');
+      }
+
       setState(() {
         puncteGrafic = data.asMap().entries.map((e) {
           double v = double.parse(e.value['temperatura'].toString());
@@ -265,6 +282,14 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
           double v = double.parse(e.value['umiditate'].toString());
           return FlSpot(e.key.toDouble(), v);
         }).toList();
+        
+        if (energyData.isNotEmpty) {
+          punctePutere = energyData.asMap().entries.map((e) {
+            double v = double.parse(e.value['power_w'].toString());
+            return FlSpot(e.key.toDouble(), v);
+          }).toList();
+        }
+        
         seIncarcaGraficul = false;
       });
     } catch (e) {
@@ -678,6 +703,7 @@ class _DashboardScreenV2State extends State<DashboardScreenV2> {
         MaterialPageRoute(builder: (context) => IstoricDetaliatScreenV2(
           tempPoints: puncteGrafic,
           humidityPoints: puncteUmiditate,
+          powerPoints: punctePutere,
           energyTodayWh: energyTodayWh,
           energyMonthWh: energyMonthWh,
           costAziLei: costAziLei,
@@ -1508,6 +1534,7 @@ class EnergyStatItem extends StatelessWidget {
 class IstoricDetaliatScreenV2 extends StatelessWidget {
   final List<FlSpot> tempPoints;
   final List<FlSpot> humidityPoints;
+  final List<FlSpot> powerPoints; // NOU
   // Date energie
   final double energyTodayWh;
   final double energyMonthWh;
@@ -1521,6 +1548,7 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
     super.key, 
     required this.tempPoints,
     required this.humidityPoints,
+    required this.powerPoints, // NOU
     this.energyTodayWh = 0.0,
     this.energyMonthWh = 0.0,
     this.costAziLei = 0.0,
@@ -1561,6 +1589,8 @@ class IstoricDetaliatScreenV2 extends StatelessWidget {
                 const SizedBox(height: 30),
                 const SectionTitle("ENERGY PROFILE — S60"),
                 _buildEnergySection(),
+                const SizedBox(height: 15),
+                _buildChart(powerPoints, const Color(0xFF7C3AED), " W", 5.0),
                 const SizedBox(height: 30),
                 const SectionTitle("EVENT HISTORY (LAST 5 CHECKPOINTS)"),
                 _buildLog(),
