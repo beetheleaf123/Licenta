@@ -2627,20 +2627,9 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
       if (_threshold > sliderMax) _threshold = sliderMax;
       if (_threshold < sliderMin) _threshold = sliderMin;
     } else if (_selectedSensor == 'power') {
-      sliderMin = 0.0;
-      sliderMax = 3500.0;   // Max priză EU standard (16A × 230V)
-      sliderDivisions = 350; // pași de 10W
       sliderLabel = '${_threshold.toInt()} W';
-      if (_threshold > sliderMax) _threshold = sliderMax;
-      if (_threshold < sliderMin) _threshold = sliderMin;
     } else if (_selectedSensor == 'voltage') {
-      sliderMin = 180.0;    // Limita inferioară EU
-      sliderMax = 260.0;    // Limita superioară EU
-      sliderDivisions = 80; // pași de 1V
       sliderLabel = '${_threshold.toInt()} V';
-      if (_threshold > sliderMax) _threshold = sliderMax;
-      if (_threshold < sliderMin) _threshold = sliderMin;
-      if (_threshold < sliderMin || _threshold == 0.0) _threshold = 230.0; // default 230V
     } else if (_selectedSensor == 'sunrise' || _selectedSensor == 'sunset') {
       sliderMin = -120.0;
       sliderMax = 120.0;
@@ -2762,7 +2751,13 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                         _selectedTime = const TimeOfDay(hour: 12, minute: 0);
                       } else {
                         _selectedOperator = '>';
-                        _threshold = val == 'temperature' ? 25.0 : val == 'humidity' ? 50.0 : 100.0;
+                        _threshold = val == 'temperature'
+                            ? 25.0
+                            : val == 'humidity'
+                                ? 50.0
+                                : val == 'voltage'
+                                    ? 230.0
+                                    : 100.0;
                       }
                     });
                   }
@@ -2845,38 +2840,92 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
                 const SizedBox(height: 20),
 
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(15),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            "Valoare Prag",
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                  child: (_selectedSensor == 'power' || _selectedSensor == 'voltage')
+                      ? TextFormField(
+                          key: ValueKey('threshold_$_selectedSensor'),
+                          initialValue: _threshold.toInt().toString(),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                          decoration: InputDecoration(
+                            labelText: _selectedSensor == 'power'
+                                ? "Valoare Prag Putere (W, max 3680)"
+                                : "Valoare Prag Tensiune (V, 180 - 260)",
+                            hintText: _selectedSensor == 'power' ? "ex: 100" : "ex: 230",
+                            suffixText: _selectedSensor == 'power' ? "W" : "V",
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: Icon(
+                              _selectedSensor == 'power'
+                                  ? Icons.flash_on_rounded
+                                  : Icons.electrical_services_rounded,
+                              color: Colors.indigo,
+                            ),
                           ),
-                          Text(
-                            sliderLabel,
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.indigo),
+                          validator: (val) {
+                            if (val == null || val.isEmpty) {
+                              return 'Te rog introdu o valoare';
+                            }
+                            final numVal = double.tryParse(val);
+                            if (numVal == null) {
+                              return 'Te rog introdu un număr valid';
+                            }
+                            if (_selectedSensor == 'power') {
+                              if (numVal < 0 || numVal > 3680) {
+                                return 'Valoarea trebuie să fie între 0 și 3680 W';
+                              }
+                            } else if (_selectedSensor == 'voltage') {
+                              if (numVal < 180 || numVal > 260) {
+                                return 'Tensiunea trebuie să fie între 180 și 260 V';
+                              }
+                            }
+                            return null;
+                          },
+                          onChanged: (v) {
+                            final parsed = double.tryParse(v);
+                            if (parsed != null) {
+                              setState(() {
+                                _threshold = parsed;
+                              });
+                            }
+                          },
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    "Valoare Prag",
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                                  ),
+                                  Text(
+                                    sliderLabel,
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.indigo),
+                                  ),
+                                ],
+                              ),
+                              Slider(
+                                value: _threshold,
+                                min: sliderMin,
+                                max: sliderMax,
+                                divisions: sliderDivisions,
+                                label: sliderLabel,
+                                activeColor: Colors.indigo,
+                                onChanged: (v) => setState(() => _threshold = v),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      Slider(
-                        value: _threshold,
-                        min: sliderMin,
-                        max: sliderMax,
-                        divisions: sliderDivisions,
-                        label: sliderLabel,
-                        activeColor: Colors.indigo,
-                        onChanged: (v) => setState(() => _threshold = v),
-                      ),
-                    ],
-                  ),
+                        ),
                 ),
                 const SizedBox(height: 20),
               ] else if (isTimeOrSun) ...[
