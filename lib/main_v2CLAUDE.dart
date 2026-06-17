@@ -2626,6 +2626,21 @@ class _AddRuleBottomSheetState extends State<AddRuleBottomSheet> {
       sliderLabel = '${_threshold.toInt()} lx';
       if (_threshold > sliderMax) _threshold = sliderMax;
       if (_threshold < sliderMin) _threshold = sliderMin;
+    } else if (_selectedSensor == 'power') {
+      sliderMin = 0.0;
+      sliderMax = 3500.0;   // Max priză EU standard (16A × 230V)
+      sliderDivisions = 350; // pași de 10W
+      sliderLabel = '${_threshold.toInt()} W';
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+    } else if (_selectedSensor == 'voltage') {
+      sliderMin = 180.0;    // Limita inferioară EU
+      sliderMax = 260.0;    // Limita superioară EU
+      sliderDivisions = 80; // pași de 1V
+      sliderLabel = '${_threshold.toInt()} V';
+      if (_threshold > sliderMax) _threshold = sliderMax;
+      if (_threshold < sliderMin) _threshold = sliderMin;
+      if (_threshold < sliderMin || _threshold == 0.0) _threshold = 230.0; // default 230V
     } else if (_selectedSensor == 'sunrise' || _selectedSensor == 'sunset') {
       sliderMin = -120.0;
       sliderMax = 120.0;
